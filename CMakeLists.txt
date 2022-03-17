@@ -10,7 +10,8 @@ if(WIN32 OR APPLE)
     	include_directories(deps/SDL-release-2.0.16/include)
         set(PGL_SDL_LIBRARIES SDL2-static SDL2main)
 else()
-        find_package(SDL2 REQUIRED)
+	find_package(PkgConfig REQUIRED)
+	pkg_check_modules(SDL2 REQUIRED sdl2)
         set(PGL_SDL_LIBRARIES ${SDL2_LIBRARIES})
 endif(WIN32 OR APPLE)
 
@@ -38,9 +39,6 @@ add_executable(
     examples/ex3.c
 )
 
-
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
 
 include_directories(${SDL2_INCLUDE_DIR} )
 target_link_libraries(ex1 dl m pthread
