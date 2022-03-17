@@ -6,7 +6,7 @@
 
 
 #define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -76,7 +76,7 @@ int main(int argc, char** argv)
 
 	unsigned int old_time = 0, new_time=0, counter = 0;
 	unsigned int last_frame = 0;
-		
+
 	while (!quit) {
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_QUIT)
@@ -89,7 +89,7 @@ int main(int argc, char** argv)
 
 		new_time = SDL_GetTicks();
 		last_frame = new_time;
-		
+
 		counter++;
 		if (!(counter % 300)) {
 			printf("%d  %f FPS\n", new_time-old_time, 300000/((float)(new_time-old_time)));
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 			counter = 0;
 		}
 
-		
+
 		glClear(GL_COLOR_BUFFER_BIT);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -161,5 +161,3 @@ void cleanup()
 
 	SDL_Quit();
 }
-
-
