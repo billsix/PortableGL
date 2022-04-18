@@ -1,6 +1,6 @@
 /*
 
-PortableGL 0.94 MIT licensed software renderer that closely mirrors OpenGL 3.x
+PortableGL 0.95 MIT licensed software renderer that closely mirrors OpenGL 3.x
 portablegl.com
 robertwinkler.com
 
@@ -1874,6 +1874,26 @@ enum
 	GL_UNIFORM_BUFFER,
 	GL_NUM_BUFFER_TYPES,
 
+	// Framebuffer stuff (unused/supported yet)
+	GL_FRAMEBUFFER,
+	GL_DRAW_FRAMEBUFFER,
+	GL_READ_FRAMEBUFFER,
+
+	GL_COLOR_ATTACHMENT0,
+	GL_COLOR_ATTACHMENT1,
+	GL_COLOR_ATTACHMENT2,
+	GL_COLOR_ATTACHMENT3,
+	GL_COLOR_ATTACHMENT4,
+	GL_COLOR_ATTACHMENT5,
+	GL_COLOR_ATTACHMENT6,
+	GL_COLOR_ATTACHMENT7,
+
+	GL_DEPTH_ATTACHMENT,
+	GL_STENCIL_ATTACHMENT,
+	GL_DEPTH_STENCIL_ATTACHMENT,
+
+	GL_RENDERBUFFER,
+
 	//buffer use hints (not used currently)
 	GL_STREAM_DRAW,
 	GL_STREAM_READ,
@@ -2000,7 +2020,7 @@ enum
 	GL_LINEAR_MIPMAP_NEAREST,
 	GL_LINEAR_MIPMAP_LINEAR,
 
-	//texture formats
+	//texture/depth/stencil formats
 	GL_RED,
 	GL_RG,
 	GL_RGB,
@@ -2012,6 +2032,21 @@ enum
 	GL_COMPRESSED_RGB,
 	GL_COMPRESSED_RGBA,
 	//lots more go here but not important
+
+	// None of these are used currently just to help porting
+	GL_DEPTH_COMPONENT16,
+	GL_DEPTH_COMPONENT24,
+	GL_DEPTH_COMPONENT32,
+	GL_DEPTH_COMPONENT32F, // PGL uses a float depth buffer
+
+	GL_DEPTH24_STENCIL8,
+	GL_DEPTH32F_STENCIL8,  // <- we do this
+
+	GL_STENCIL_INDEX1,
+	GL_STENCIL_INDEX4,
+	GL_STENCIL_INDEX8,   // this
+	GL_STENCIL_INDEX16,
+
 	
 	//PixelStore parameters
 	GL_UNPACK_ALIGNMENT,
@@ -2169,6 +2204,7 @@ enum
 #define GL_MAX_VERTEX_ATTRIBS 16
 #define GL_MAX_VERTEX_OUTPUT_COMPONENTS 64
 #define GL_MAX_DRAW_BUFFERS 8
+#define GL_MAX_COLOR_ATTACHMENTS 8
 
 //TODO use prefix like GL_SMOOTH?  PGL_SMOOTH?
 enum { SMOOTH, FLAT, NOPERSPECTIVE };
@@ -4346,9 +4382,33 @@ void glUseProgram(GLuint program);
 void pglSetUniform(void* uniform);
 
 
+
 // Stubs to let real OpenGL libs compile with minimal modifications/ifdefs
 // add what you need
+
 void glGenerateMipmap(GLenum target);
+
+void glGetDoublev(GLenum pname, GLdouble* params);
+void glGetInteger64v(GLenum pname, GLint64* params);
+
+// Framebuffers/Renderbuffers
+void glGenFramebuffers(GLsizei n, GLuint* ids);
+void glBindFramebuffer(GLenum target, GLuint framebuffer);
+void glDeleteFramebuffers(GLsizei n, GLuint* framebuffers);
+void glFramebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level);
+void glFramebufferTexture1D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+void glFramebufferTexture3D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint layer);
+GLboolean glIsFramebuffer(GLuint framebuffer);
+
+void glGenRenderbuffers(GLsizei n, GLuint* renderbuffers);
+void glBindRenderbuffer(GLenum target, GLuint renderbuffer);
+void glDeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers);
+void glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+GLboolean glIsRenderbuffer(GLuint renderbuffer);
+
+void glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
+GLenum glCheckFramebufferStatus(GLenum target);
 
 
 void glGetProgramiv(GLuint program, GLenum pname, GLint* params);
@@ -7411,35 +7471,29 @@ static void do_vertex(glVertex_Attrib* v, int* enabled, unsigned int num_enabled
 static void vertex_stage(GLint first, GLsizei count, GLsizei instance_id, GLuint base_instance, GLboolean use_elements)
 {
 	unsigned int i, j, vert, num_enabled;
-	vec4 tmpvec4;
 	u8* buf_pos;
 
 	//save checking if enabled on every loop if we build this first
 	//also initialize the vertex_attrib space
 	float vec4_init[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	int enabled[GL_MAX_VERTEX_ATTRIBS];
-	memset(enabled, 0, sizeof(int)*GL_MAX_VERTEX_ATTRIBS);
+	int enabled[GL_MAX_VERTEX_ATTRIBS] = { 0 };
 	glVertex_Attrib* v = c->vertex_arrays.a[c->cur_vertex_array].vertex_attribs;
 	GLuint elem_buffer = c->vertex_arrays.a[c->cur_vertex_array].element_buffer;
 
 	for (i=0, j=0; i<GL_MAX_VERTEX_ATTRIBS; ++i) {
-		memcpy(&c->vertex_attribs_vs[i], vec4_init, sizeof(vec4));
-
 		if (v[i].enabled) {
 			if (v[i].divisor == 0) {
+				// no need to set to defalt vector here because it's handled in do_vertex()
 				enabled[j++] = i;
-				//printf("%d is enabled\n", i);
 			} else if (!(instance_id % v[i].divisor)) {   //set instanced attributes if necessary
+				// only reset to default vector right before updating, because
+				// it has to stay the same across multiple instances for divisors > 1
+				memcpy(&c->vertex_attribs_vs[i], vec4_init, sizeof(vec4));
+
 				int n = instance_id/v[i].divisor + base_instance;
 				buf_pos = (u8*)c->buffers.a[v[i].buf].data + v[i].offset + v[i].stride*n;
 
-				SET_VEC4(tmpvec4, 0.0f, 0.0f, 0.0f, 1.0f);
-
-				memcpy(&tmpvec4, buf_pos, sizeof(float)*v[enabled[j]].size); //TODO why do I have v[enabled[j]].size and not just v[i].size?
-
-				//c->cur_vertex_array->vertex_attribs[enabled[j]].buf->data;
-
-				c->vertex_attribs_vs[i] = tmpvec4;
+				memcpy(&c->vertex_attribs_vs[i], buf_pos, sizeof(float)*v[i].size);
 			}
 		}
 	}
@@ -8553,6 +8607,11 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 					SET_VEC4(builtins.gl_FragCoord, x, y, z, tmp2);
 					builtins.discard = GL_FALSE;
 					builtins.gl_FragDepth = z;
+
+					// have to do this here instead of outside the loop because somehow openmp messes it up
+					// TODO probably some way to prevent that but it's just copying an int so no big deal
+					builtins.gl_InstanceID = c->builtins.gl_InstanceID;
+
 					c->programs.a[c->cur_program].fragment_shader(fs_input, &builtins, c->programs.a[c->cur_program].uniform);
 					if (!builtins.discard) {
 
@@ -9208,7 +9267,7 @@ GLubyte* glGetString(GLenum name)
 {
 	static GLubyte vendor[] = "Robert Winkler";
 	static GLubyte renderer[] = "PortableGL";
-	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.94";
+	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.95";
 	static GLubyte shading_language[] = "C/C++";
 
 	switch (name) {
@@ -9579,22 +9638,6 @@ void glPixelStorei(GLenum pname, GLint param)
 	}
 
 }
-
-void glGenerateMipmap(GLenum target)
-{
-	if (target != GL_TEXTURE_1D && target != GL_TEXTURE_2D && target != GL_TEXTURE_3D && target != GL_TEXTURE_CUBE_MAP) {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
-
-	//TODO not implemented, not sure it's worth it.  This stub is just to
-	//make porting real OpenGL programs easier.
-	//For example mipmap generation code see
-	//https://github.com/thebeast33/cro_lib/blob/master/cro_mipmap.h
-}
-
-
 
 void glTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid* data)
 {
@@ -10951,11 +10994,41 @@ void* glMapNamedBuffer(GLuint buffer, GLenum access)
 	return data;
 }
 
+
 // Stubs to let real OpenGL libs compile with minimal modifications/ifdefs
 // add what you need
 
+void glGenerateMipmap(GLenum target)
+{
+	//TODO not implemented, not sure it's worth it.
+	//For example mipmap generation code see
+	//https://github.com/thebeast33/cro_lib/blob/master/cro_mipmap.h
+}
+
 void glGetDoublev(GLenum pname, GLdouble* params) { }
 void glGetInteger64v(GLenum pname, GLint64* params) { }
+
+// Framebuffers/Renderbuffers
+void glGenFramebuffers(GLsizei n, GLuint* ids) {}
+void glBindFramebuffer(GLenum target, GLuint framebuffer) {}
+void glDeleteFramebuffers(GLsizei n, GLuint* framebuffers) {}
+void glFramebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level) {}
+void glFramebufferTexture1D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {}
+void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {}
+void glFramebufferTexture3D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint layer) {}
+GLboolean glIsFramebuffer(GLuint framebuffer) { return GL_FALSE; }
+
+void glGenRenderbuffers(GLsizei n, GLuint* renderbuffers) {}
+void glBindRenderbuffer(GLenum target, GLuint renderbuffer) {}
+void glDeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) {}
+void glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height) {}
+GLboolean glIsRenderbuffer(GLuint renderbuffer) { return GL_FALSE; }
+
+void glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer) {}
+// Could also return GL_FRAMEBUFFER_UNDEFINED, but then I'd have to add all
+// those enums and really 0 signaling an error makes more sense
+GLenum glCheckFramebufferStatus(GLenum target) { return 0; }
+
 
 
 void glGetProgramiv(GLuint program, GLenum pname, GLint* params) { }

@@ -349,7 +349,7 @@ GLubyte* glGetString(GLenum name)
 {
 	static GLubyte vendor[] = "Robert Winkler";
 	static GLubyte renderer[] = "PortableGL";
-	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.94";
+	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.95";
 	static GLubyte shading_language[] = "C/C++";
 
 	switch (name) {
@@ -720,22 +720,6 @@ void glPixelStorei(GLenum pname, GLint param)
 	}
 
 }
-
-void glGenerateMipmap(GLenum target)
-{
-	if (target != GL_TEXTURE_1D && target != GL_TEXTURE_2D && target != GL_TEXTURE_3D && target != GL_TEXTURE_CUBE_MAP) {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
-
-	//TODO not implemented, not sure it's worth it.  This stub is just to
-	//make porting real OpenGL programs easier.
-	//For example mipmap generation code see
-	//https://github.com/thebeast33/cro_lib/blob/master/cro_mipmap.h
-}
-
-
 
 void glTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid* data)
 {
@@ -2091,77 +2075,4 @@ void* glMapNamedBuffer(GLuint buffer, GLenum access)
 	pglGetBufferData(buffer, &data);
 	return data;
 }
-
-// Stubs to let real OpenGL libs compile with minimal modifications/ifdefs
-// add what you need
-
-void glGetDoublev(GLenum pname, GLdouble* params) { }
-void glGetInteger64v(GLenum pname, GLint64* params) { }
-
-
-void glGetProgramiv(GLuint program, GLenum pname, GLint* params) { }
-void glGetProgramInfoLog(GLuint program, GLsizei maxLength, GLsizei* length, GLchar* infoLog) { }
-void glAttachShader(GLuint program, GLuint shader) { }
-void glCompileShader(GLuint shader) { }
-void glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei* length, GLchar* infoLog) { }
-void glLinkProgram(GLuint program) { }
-void glShaderSource(GLuint shader, GLsizei count, const GLchar** string, const GLint* length) { }
-void glGetShaderiv(GLuint shader, GLenum pname, GLint* params) { }
-void glDeleteShader(GLuint shader) { }
-void glDetachShader(GLuint program, GLuint shader) { }
-
-GLuint glCreateProgram() { return 0; }
-GLuint glCreateShader(GLenum shaderType) { return 0; }
-GLint glGetUniformLocation(GLuint program, const GLchar* name) { return 0; }
-GLint glGetAttribLocation(GLuint program, const GLchar* name) { return 0; }
-
-GLboolean glUnmapBuffer(GLenum target) { return GL_TRUE; }
-GLboolean glUnmapNamedBuffer(GLuint buffer) { return GL_TRUE; }
-
-// TODO
-void glLineWidth(GLfloat width) { }
-
-void glActiveTexture(GLenum texture) { }
-void glTexParameterfv(GLenum target, GLenum pname, const GLfloat* params) { }
-
-void glUniform1f(GLint location, GLfloat v0) { }
-void glUniform2f(GLint location, GLfloat v0, GLfloat v1) { }
-void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) { }
-void glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3) { }
-
-void glUniform1i(GLint location, GLint v0) { }
-void glUniform2i(GLint location, GLint v0, GLint v1) { }
-void glUniform3i(GLint location, GLint v0, GLint v1, GLint v2) { }
-void glUniform4i(GLint location, GLint v0, GLint v1, GLint v2, GLint v3) { }
-
-void glUniform1ui(GLuint location, GLuint v0) { }
-void glUniform2ui(GLuint location, GLuint v0, GLuint v1) { }
-void glUniform3ui(GLuint location, GLuint v0, GLuint v1, GLuint v2) { }
-void glUniform4ui(GLuint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3) { }
-
-void glUniform1fv(GLint location, GLsizei count, const GLfloat* value) { }
-void glUniform2fv(GLint location, GLsizei count, const GLfloat* value) { }
-void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) { }
-void glUniform4fv(GLint location, GLsizei count, const GLfloat* value) { }
-
-void glUniform1iv(GLint location, GLsizei count, const GLint* value) { }
-void glUniform2iv(GLint location, GLsizei count, const GLint* value) { }
-void glUniform3iv(GLint location, GLsizei count, const GLint* value) { }
-void glUniform4iv(GLint location, GLsizei count, const GLint* value) { }
-
-void glUniform1uiv(GLint location, GLsizei count, const GLuint* value) { }
-void glUniform2uiv(GLint location, GLsizei count, const GLuint* value) { }
-void glUniform3uiv(GLint location, GLsizei count, const GLuint* value) { }
-void glUniform4uiv(GLint location, GLsizei count, const GLuint* value) { }
-
-void glUniformMatrix2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix2x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix3x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix2x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix4x2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix3x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-void glUniformMatrix4x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) { }
-
 

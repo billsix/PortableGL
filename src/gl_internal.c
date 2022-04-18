@@ -109,35 +109,29 @@ static void do_vertex(glVertex_Attrib* v, int* enabled, unsigned int num_enabled
 static void vertex_stage(GLint first, GLsizei count, GLsizei instance_id, GLuint base_instance, GLboolean use_elements)
 {
 	unsigned int i, j, vert, num_enabled;
-	vec4 tmpvec4;
 	u8* buf_pos;
 
 	//save checking if enabled on every loop if we build this first
 	//also initialize the vertex_attrib space
 	float vec4_init[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	int enabled[GL_MAX_VERTEX_ATTRIBS];
-	memset(enabled, 0, sizeof(int)*GL_MAX_VERTEX_ATTRIBS);
+	int enabled[GL_MAX_VERTEX_ATTRIBS] = { 0 };
 	glVertex_Attrib* v = c->vertex_arrays.a[c->cur_vertex_array].vertex_attribs;
 	GLuint elem_buffer = c->vertex_arrays.a[c->cur_vertex_array].element_buffer;
 
 	for (i=0, j=0; i<GL_MAX_VERTEX_ATTRIBS; ++i) {
-		memcpy(&c->vertex_attribs_vs[i], vec4_init, sizeof(vec4));
-
 		if (v[i].enabled) {
 			if (v[i].divisor == 0) {
+				// no need to set to defalt vector here because it's handled in do_vertex()
 				enabled[j++] = i;
-				//printf("%d is enabled\n", i);
 			} else if (!(instance_id % v[i].divisor)) {   //set instanced attributes if necessary
+				// only reset to default vector right before updating, because
+				// it has to stay the same across multiple instances for divisors > 1
+				memcpy(&c->vertex_attribs_vs[i], vec4_init, sizeof(vec4));
+
 				int n = instance_id/v[i].divisor + base_instance;
 				buf_pos = (u8*)c->buffers.a[v[i].buf].data + v[i].offset + v[i].stride*n;
 
-				SET_VEC4(tmpvec4, 0.0f, 0.0f, 0.0f, 1.0f);
-
-				memcpy(&tmpvec4, buf_pos, sizeof(float)*v[enabled[j]].size); //TODO why do I have v[enabled[j]].size and not just v[i].size?
-
-				//c->cur_vertex_array->vertex_attribs[enabled[j]].buf->data;
-
-				c->vertex_attribs_vs[i] = tmpvec4;
+				memcpy(&c->vertex_attribs_vs[i], buf_pos, sizeof(float)*v[i].size);
 			}
 		}
 	}
@@ -1251,6 +1245,11 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 					SET_VEC4(builtins.gl_FragCoord, x, y, z, tmp2);
 					builtins.discard = GL_FALSE;
 					builtins.gl_FragDepth = z;
+
+					// have to do this here instead of outside the loop because somehow openmp messes it up
+					// TODO probably some way to prevent that but it's just copying an int so no big deal
+					builtins.gl_InstanceID = c->builtins.gl_InstanceID;
+
 					c->programs.a[c->cur_program].fragment_shader(fs_input, &builtins, c->programs.a[c->cur_program].uniform);
 					if (!builtins.discard) {
 
