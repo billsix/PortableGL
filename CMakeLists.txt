@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.0)
 
 project(portablegl LANGUAGES C CXX)
 
-set(CMAKE_C_STANDARD 99)
-
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 set( SDL_STATIC ON CACHE BOOL "" FORCE )
 set( SDL_SHARED OFF CACHE BOOL "" FORCE )
@@ -24,37 +24,34 @@ include_directories(src/
   ./
   ./glcommon/
   ${SDL2_INCLUDE_DIRS}
-  )
+  demos/imgui/
+  demos/imgui/backends
+)
 
 add_executable(
     ex1
     examples/ex1.c
 )
-set_property(TARGET ex1 PROPERTY C_STANDARD 11)
 
 add_executable(
     ex2
     examples/ex2.c
 )
-set_property(TARGET ex2 PROPERTY C_STANDARD 11)
 
 add_executable(
     ex3
     examples/ex3.c
 )
-set_property(TARGET ex3 PROPERTY C_STANDARD 11)
 
 #add_executable(
 #    assimp_convert
 #    demos/assimp_convert.c
 #)
-#set_property(TARGET assimp_convert PROPERTY C_STANDARD 11)
 
 add_executable(
     gears
     demos/gears.c
 )
-set_property(TARGET gears PROPERTY C_STANDARD 11)
 
 add_executable(
     modelviewer
@@ -62,7 +59,6 @@ add_executable(
     glcommon/chalfedge.c
     glcommon/cprimitives.c
 )
-set_property(TARGET modelviewer PROPERTY C_STANDARD 11)
 
 add_executable(
     pointsprites
@@ -70,7 +66,6 @@ add_executable(
     glcommon/gltools.c
     glcommon/gltools.h)
 
-set_property(TARGET pointsprites PROPERTY C_STANDARD 11)
 
 add_executable(
     sphereworld
@@ -82,7 +77,15 @@ add_executable(
     glcommon/rsw_halfedge.cpp
     glcommon/controls.cpp
     glcommon/c_utils.cpp)
-set_property(TARGET sphereworld PROPERTY CMAKE_CXX_STANDARD 14)
+
+
+add_executable(
+    imguidemo
+    demos/imgui/main.cpp
+    demos/imgui/backends/imgui_impl_sdl.cpp
+    demos/imgui/backends/imgui_impl_sdlrenderer.cpp
+)
+
 
 
 
@@ -118,6 +121,9 @@ target_link_libraries(pointsprites ${LINK_LIBRARIES}
 target_link_libraries(sphereworld ${LINK_LIBRARIES}
   ${PGL_SDL_LIBRARIES} )
 
+target_link_libraries(imguidemo ${LINK_LIBRARIES}
+  ${PGL_SDL_LIBRARIES} )
+
 install(TARGETS ex1 DESTINATION bin)
 install(TARGETS ex2 DESTINATION bin)
 install(TARGETS ex3 DESTINATION bin)
@@ -125,3 +131,4 @@ install(TARGETS gears DESTINATION bin)
 install(TARGETS modelviewer DESTINATION bin)
 install(TARGETS pointsprites DESTINATION bin)
 install(TARGETS sphereworld DESTINATION bin)
+install(TARGETS imguidemo DESTINATION bin)
