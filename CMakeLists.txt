@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.0)
 
 project(portablegl LANGUAGES C CXX)
 
+set(CMAKE_C_STANDARD 99)
+
+
 set( SDL_STATIC ON CACHE BOOL "" FORCE )
 set( SDL_SHARED OFF CACHE BOOL "" FORCE )
 
