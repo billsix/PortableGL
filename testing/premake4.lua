@@ -2,7 +2,7 @@
 solution "Testing"
 	configurations { "Debug", "Release" }
 	
-	includedirs { "../", "../glcommon", "/usr/local/include" }
+	includedirs { "../", "../glcommon", "/usr/include/SDL2" }
 
 	-- stuff up here common to all projects
 	kind "ConsoleApp"
@@ -12,7 +12,7 @@ solution "Testing"
 	targetdir "."
 
 	configuration "linux"
-		links { "SDL2", "m", "gomp" }
+		links { "SDL2", "m" }
 	
 	configuration "windows"
 		--linkdir "/mingw64/lib"
@@ -20,7 +20,7 @@ solution "Testing"
 		links { "mingw32", "SDL2main", "SDL2" }
 
 	configuration { "gmake" }
-		buildoptions { "-fno-rtti", "-fno-exceptions", "-fno-strict-aliasing", "-Wunused-variable", "-Wreturn-type", "-fopenmp" }
+		buildoptions { "-fno-rtti", "-fno-exceptions", "-fno-strict-aliasing", "-Wunused-variable", "-Wreturn-type" }
 
 	configuration "Debug"
 		defines { "DEBUG" }

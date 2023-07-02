@@ -1,6 +1,6 @@
 
 #define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #define MANGLE_TYPES
 #define EXCLUDE_GLSL
@@ -205,8 +205,8 @@ int main(int argc, char** argv)
 	Mesh torus;
 	Mesh sphere;
 
-	generate_torus(torus.verts, torus.tris, torus.texcoords, 0.3, 0.1, 40, 20);
-	generate_sphere(sphere.verts, sphere.tris, sphere.texcoords, 0.1, 26, 13);
+	make_torus(torus.verts, torus.tris, torus.texcoords, 0.3, 0.1, 40, 20);
+	make_sphere(sphere.verts, sphere.tris, sphere.texcoords, 0.1, 26, 13);
 
 	compute_normals(torus.verts, torus.tris, NULL, DEG_TO_RAD(30), torus.normals);
 	compute_normals(sphere.verts, sphere.tris, NULL, DEG_TO_RAD(30), sphere.normals);
@@ -265,7 +265,7 @@ int main(int argc, char** argv)
 	glEnableVertexAttribArray(ATTR_VERTEX);
 	glVertexAttribPointer(ATTR_VERTEX, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), 0);
 	glEnableVertexAttribArray(ATTR_NORMAL);
-	glVertexAttribPointer(ATTR_NORMAL, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), sizeof(vec3));
+	pglVertexAttribPointer(ATTR_NORMAL, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), sizeof(vec3));
 
 	GLuint inst_buf;
 	glGenBuffers(1, &inst_buf);
@@ -625,7 +625,7 @@ void gouraud_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* bui
 	
 	//non-local viewer and constant directional light
 	vec3 light_dir = normalize(u->light_dir);
-	vec3 eye_dir = vec3(0, 0, 1);	
+	vec3 eye_dir = vec3(0, 0, 1);
 	
 	//as if all lights are white TODO
 	vec3 out_light = u->Ka;

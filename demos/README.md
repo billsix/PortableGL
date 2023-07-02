@@ -6,7 +6,9 @@ a free for all of me experimenting and having fun.
 
 ESC will exit all of them.
 
-Flying controls = 6DOF flying controls ala Descent. Mouse + WASDQE + LShift + Space
+Flying controls = 6DOF flying controls a la 
+[Descent](https://en.wikipedia.org/wiki/Descent_(video_game)).
+Mouse + WASDQE + LShift + Space
 
 If you run any of these and they don't look like the screenshots and you can't
 figure out why, please let me know by opening an issue, thanks!
@@ -37,6 +39,17 @@ and polygon modes.  The program assimp_convert will, if you have libassimp insta
 text format modelviewer reads.  Be aware you might have to scale and translate them to make them visible.  The stanford models provided are
 already centered.
 
+### Multidraw
+
+![multidraw](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/multidraw.png)
+![multidraw](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/multidraw2.png)
+
+This is a very simple demo to show how to use glMultiDrawArrays and glMultiDrawElements with PGL and
+how they differ slightly (specifically Elements) from regular OpenGL.  Compare with the same program
+[in opengl_reference](https://github.com/rswinkle/opengl_reference/blob/master/src/multidraw.cpp).  Hit 'e' to switch
+between DrawArrays and DrawElements, 'p' to change polygon modes.
+
+
 ### Texturing
 
 ![texturing1](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/texturing1.png)
@@ -47,8 +60,7 @@ already centered.
 What it says on the tin.  Arrow keys to zoom/rotate, 1 to switch between 5 textures, 'f' to switch between GL_NEAREST and GL_LINEAR. Note,
 PortableGL doesn't actually use min_filter.  You can set it, but only mag_filter is used in all the texel access functions.
 The fourth texture is a texture array (a GIF of Nathan Fillion from "Two Guys and a Girl" if you were wondering).
-You can't really tell the difference between the filtering options on the gif, I hope because the quality is so low/GIF artifacts and
-not because of a bug.  The last texture is a GL_TEXTURE_RECTANGLE, though obviously there's no visible difference, just making sure
+The last texture is a GL_TEXTURE_RECTANGLE, though obviously there's no visible difference, just making sure
 it works.
 
 ### Pointsprites
@@ -63,26 +75,24 @@ returned from glGenTextures.  It's much more convenient imo.
 
 ![cubemap](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/cubemap.png)
 
-This uses a cubemap texture to create the reflective sphere + skybox demo.  Partial flying controls (WASD + mouse).
-Unfortunately there is a bug that I've never bothered to track down so when you look around, the skybox wobbles.  Just moving has no effect,
-only turning with the mouse which makes sense since the skybox is "infinitely" distant iirc.  It's likely that the problem is with the application code, and not
-PortableGL given that the sphere looks fine meaning the cubemap sampling is correct.
+This uses a cubemap texture to create the reflective sphere + skybox demo.  Flying controls.
 
 ### Sphereworld
 
 ![sphereworld](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/sphereworld.png)
 
 Another demo from [Superbible 5](https://github.com/rswinkle/oglsuperbible5/blob/1a92eb6b4eeb665582acd69bc41ba793ff974bd1/Src/Chapter05/Sphereworld/Sphereworld.cpp)
-but with better controls and a slightly different shader and light direction.  The controls are shown in the terminal on startup (read from a user editable
-controls.config file).  This is also, along with swrenderer, one of 3 current demos that show one way to resize the window, by calling pglResizeFramebuffer so the resolution always
-matches the window size.  The other simpler more performant way is to let SDL2 scale for
-you like I do with shadertoy and raytracing_1wekend.
+but with better controls and a slightly different shader and light direction.  The controls are shown in the terminal on startup (read from a config file
+the default being qwerty_controls.config, but you can pass an argument to select another file like dvorak_controls.config, or edit qwerty to suit your liking).
+This is also, along with swrenderer, one of 3 current demos that show one way to resize the window, by calling pglResizeFramebuffer so the resolution always
+matches the window size.  The other simpler, more performant way, is to let SDL2 scale for
+you like I do with shadertoy and raytracing_1weekend.
 
 ### Sphereworld Color
 
 ![sphereworld_color](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/sphereworld_color.png)
 
-Similar to Sphereworld, but with fewer controls (just 6DOF + mouse + tilt) and using colors not textures naturally.  This one does let you switch
+Similar to Sphereworld, but with fewer, hard coded controls (just 6DOF + mouse + tilt), and using colors not textures naturally.  This one does let you switch
 between gouraud and phong shading, with the semi-interesting result that the latter actually has better performance.
 
 ### Shadertoy
@@ -101,11 +111,12 @@ Use the left and right arrow keys to cycle through 11 different shaders, roughly
 decreasing performance.  I include links/attribution in the comments above the shaders taken directly from shadertoy.com
 if you want to see them in their full glory.
 
-Originaly, it used the normal method of drawing 2 triangles that fill the screen (and you can still see that code commented out)
+Originally, it used the normal method of drawing 2 triangles that fill the screen (and you can still see that code commented out)
 but making this in PortableGL meant I could add an extension, pglDrawFrame(), for this special use case that
 bypasses the vertex shader entirely and just sets everything up the way shadertoy shaders need things.  Unfortunately, it doesn't
 increase frame rate as much as I'd hoped so I ended up changing the resolution to 320x240 get "bearable" framerates on the harder shaders.
-Even so, the last few shaders can hardly be called "realtime".  Also the tunnel light one seems to have some graphical bug.
+Even so, the last few shaders can hardly be called "realtime".  Also the tunnel light one seems to have some graphical bug, or the slow FPS just
+makes it look wrong.
 
 Since 320x240 is so small, especially on high-DPI monitors, I made this one resizable but unlike Sphereworld, where
 I change the framebuffer (and the projection and glViewport) to match, here I just let SDL2 scale the texture; it's slower
@@ -119,12 +130,21 @@ Also, if you want to play with a real standalone shadertoy (with live updating) 
 ![swrenderer1](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/swrenderer1.png)
 ![swrenderer2](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/swrenderer2.png)
 
-I need to think of a better name for this.  This dates back to the *very* beginning of this project, based off of a tutorial.  That's why it's main.cpp.
+I need to think of a better name for this.  This dates back to the *very* beginning (summer 2011) of this project, based off of a tutorial.  That's why it's main.cpp.
 Basically, for the longest time this was where I tested each new feature I added.  So this has interpolation, textures, depth test toggle, and a pseudo-
 render to texture that's really just an extra manual copy via TexSubImage2D after the first pass.  There are also multiple methods of doing things
 commented out.  Same controls as Sphereworld and 1 to switch between textures (only seen when you're using the texture shader, switched to with 's').
 
-TODO: I use dvorak, so I need to make a controls.config for QWERTY for others' convenience though it's not hard to edit the file by hand.
+By default it loads qwerty_controls.config but you can pass it an argument for a different config file (I use the included dvorak_controls.config).
+
+
+### SDL_Renderer Dear ImGui
+
+![sdl_renderer_imgui](https://raw.githubusercontent.com/rswinkle/PortableGL/master/media/screenshots/sdl_renderer_imgui.png)
+
+This shows how you can use Dear ImGui's SDL_Renderer backend with PortableGL.  It is literally their example program for that backend with
+PortableGL tacked on, just drawing a triangle to show it works and using the clear color from the GUI for the glClear call.  See
+the code and comments for more details.
 
 
 ### Raytracing_1weekend

@@ -526,7 +526,10 @@ struct dvec2
 	double y;
 
 
-	dvec2(double x=0, double y=0) : x(x), y(y) {}
+	dvec2() : x(), y() {}
+	dvec2(double a) : x(a), y(a) {}
+	dvec2(double x, double y) : x(x), y(y) {}
+
 	double len() { return sqrt((*this)*(*this)); }
 	dvec2 norm() { double l = this->len(); return dvec2(x/l, y/l); }
 	void normalize() { (*this)/=this->len(); }
@@ -579,7 +582,12 @@ struct dvec3
 		double pts[3];
 	};
 
-	dvec3(double x=0, double y=0, double z=0) : x(x), y(y), z(z) {}
+	dvec3() : x(), y(), z() {}
+	dvec3(double a) : x(a), y(a), z(a) {}
+	dvec3(double x, double y, double z) : x(x), y(y), z(z) {}
+	dvec3(vec2 a, double z) : x(a.x), y(a.y), z(z) {}
+	dvec3(double x, vec2 a) : x(x), y(a.x), z(a.y) {}
+
 	double len() { return sqrt((*this)*(*this)); }
 	dvec3 norm() { double l = this->len(); return dvec3(x/l, y/l, z/l); }
 	void normalize() { (*this)/=this->len(); }
@@ -706,8 +714,14 @@ struct dvec4
 		double pts[4];
 	};
 
-	dvec4(double x=0, double y=0, double z=0, double w=1) : x(x), y(y), z(z), w(w) {}
-	dvec4(dvec3 a) : x(a.x), y(a.y), z(a.z), w(1) {}
+	dvec4() : x(), y(), z(), w() {}
+	dvec4(double a) : x(a), y(a), z(a), w(a) {}
+	dvec4(double x, double y, double z, double w) : x(x), y(y), z(z), w(w) {}
+	dvec4(dvec3 a, double w) : x(a.x), y(a.y), z(a.z), w(w) {}
+	dvec4(dvec2 a, double z, double w) : x(a.x), y(a.y), z(z), w(w) {}
+	dvec4(dvec2 a, dvec2 b) : x(a.x), y(a.y), z(b.x), w(b.y) {}
+	dvec4(double x, double y, dvec2 b) : x(x), y(y), z(b.x), w(b.y) {}
+
 	dvec3 todvec3() { return dvec3(x, y, z); }
 	dvec2 todvec2() { return dvec2(x, y); }
 	dvec3 dvec3h() { return dvec3(x/w, y/w, z/w); }
@@ -719,7 +733,7 @@ struct dvec4
 //	dvec3& operator-=(dvec3);
 //	dvec3& operator+=(dvec3);
 //	dvec3& operator*=(double);
-//	dvec3& operator/=(double);\
+//	dvec3& operator/=(double);
 
 	//swizzles
 	dvec2 xx() { return dvec2(x,x); }
@@ -817,7 +831,9 @@ struct ivec2
 		int pts[2];
 	};
 
-	ivec2(int x=0, int y=0) : x(x), y(y) {}
+	ivec2() : x(), y() {}
+	ivec2(int a) : x(a), y(a) {}
+	ivec2(int x, int y) : x(x), y(y) {}
 
 
 	ivec2& operator+=(ivec2 a) { x += a.x; y += a.y; return *this; }
@@ -849,7 +865,11 @@ struct ivec3
 		int pts[3];
 	};
 
-	ivec3(int x=0, int y=0, int z=0) : x(x), y(y), z(z) {}
+	ivec3() : x(), y(), z() {}
+	ivec3(int a) : x(a), y(a), z(a) {}
+	ivec3(int x, int y, int z) : x(x), y(y), z(z) {}
+	ivec3(ivec2 a, int z) : x(a.x), y(a.y), z(z) {}
+	ivec3(int x, ivec2 a) : x(x), y(a.x), z(a.y) {}
 
 
 	ivec3& operator+=(ivec3 a) { x += a.x; y += a.y; z += a.z; return *this; }
@@ -878,7 +898,13 @@ struct ivec4
 		int pts[4];
 	};
 
-	ivec4(int x=0, int y=0, int z=0, int w=1) : x(x), y(y), z(z), w(w) {}
+	ivec4() : x(), y(), z(), w() {}
+	ivec4(int a) : x(a), y(a), z(a), w(a) {}
+	ivec4(int x, int y, int z, int w) : x(x), y(y), z(z), w(w) {}
+	ivec4(ivec3 a, int w) : x(a.x), y(a.y), z(a.z), w(w) {}
+	ivec4(ivec2 a, int z, int w) : x(a.x), y(a.y), z(z), w(w) {}
+	ivec4(ivec2 a, ivec2 b) : x(a.x), y(a.y), z(b.x), w(b.y) {}
+	ivec4(int x, int y, ivec2 b) : x(x), y(y), z(b.x), w(b.y) {}
 
 
 	ivec4& operator+=(ivec4 a) { x += a.x; y += a.y; z += a.z; w += a.w; return *this; }
@@ -909,7 +935,9 @@ struct uvec2
 		unsigned int pts[2];
 	};
 
-	uvec2(unsigned int x=0, unsigned int y=0) : x(x), y(y) {}
+	uvec2() : x(), y() {}
+	uvec2(unsigned int a) : x(a), y(a) {}
+	uvec2(unsigned int x, unsigned int y) : x(x), y(y) {}
 
 	uvec2& operator+=(uvec2 a) { x += a.x; y += a.y; return *this; }
 	uvec2& operator*=(unsigned int a) { x *= a; y *= a; return *this; }
@@ -937,7 +965,11 @@ struct uvec3
 		unsigned int pts[3];
 	};
 
-	uvec3(unsigned int x=0, unsigned int y=0, unsigned int z=0) : x(x), y(y), z(z) {}
+	uvec3() : x(), y(), z() {}
+	uvec3(unsigned int a) : x(a), y(a), z(a) {}
+	uvec3(unsigned int x, unsigned int y, unsigned int z) : x(x), y(y), z(z) {}
+	uvec3(uvec2 a, unsigned int z) : x(a.x), y(a.y), z(z) {}
+	uvec3(unsigned int x, uvec2 a) : x(x), y(a.x), z(a.y) {}
 
 	uvec3& operator+=(uvec3 a) { x += a.x; y += a.y; z += a.z; return *this; }
 	uvec3& operator*=(unsigned int a) { x *= a; y *= a; z *= a; return *this; }
@@ -968,7 +1000,13 @@ struct uvec4
 		unsigned int pts[4];
 	};
 
-	uvec4(unsigned int x=0, unsigned int y=0, unsigned int z=0, unsigned int w=1) : x(x), y(y), z(z), w(w) {}
+	uvec4() : x(), y(), z(), w() {}
+	uvec4(unsigned int a) : x(a), y(a), z(a), w(a) {}
+	uvec4(unsigned int x, unsigned int y, unsigned int z, unsigned int w) : x(x), y(y), z(z), w(w) {}
+	uvec4(uvec3 a, unsigned int w) : x(a.x), y(a.y), z(a.z), w(w) {}
+	uvec4(uvec2 a, unsigned int z, unsigned int w) : x(a.x), y(a.y), z(z), w(w) {}
+	uvec4(uvec2 a, uvec2 b) : x(a.x), y(a.y), z(b.x), w(b.y) {}
+	uvec4(unsigned int x, unsigned int y, uvec2 b) : x(x), y(y), z(b.x), w(b.y) {}
 
 	uvec4& operator+=(uvec4 a) { x += a.x; y += a.y; z += a.z; w += a.w; return *this; }
 	uvec4& operator*=(unsigned int a) { x *= a; y *= a; z *= a; w *= a; return *this; }
@@ -1000,6 +1038,7 @@ inline bool operator==(const uvec4& a, const uvec4& b) { return ((a.x==b.x) && (
  **********************************************************
  * Matrices
  */
+
 
 struct mat2
 {
@@ -1197,10 +1236,12 @@ struct mat3
 	vec3 c2() const { return vec3(matrix[1], matrix[4], matrix[7]); }
 	vec3 c3() const { return vec3(matrix[2], matrix[5], matrix[8]); }
 
+	//sets 4th row to 0 0 0 1
 	void setc1(vec3 v) { matrix[0]=v.x, matrix[3]=v.y, matrix[6]=v.z; }
 	void setc2(vec3 v) { matrix[1]=v.x, matrix[4]=v.y, matrix[7]=v.z; }
 	void setc3(vec3 v) { matrix[2]=v.x, matrix[5]=v.y, matrix[8]=v.z; }
 
+	//sets 4th column to 0 0 0 1
 	void setx(vec3 v) { matrix[0]=v.x, matrix[1]=v.y, matrix[2]=v.z; }
 	void sety(vec3 v) { matrix[3]=v.x, matrix[4]=v.y, matrix[5]=v.z; }
 	void setz(vec3 v) { matrix[6]=v.x, matrix[7]=v.y, matrix[8]=v.z; }
@@ -1232,7 +1273,7 @@ inline std::ostream& operator<<(std::ostream& stream, const mat3& mat)
 	return stream <<"["<<mat.x()<<"\n "<<mat.y()<<"\n "<<mat.z()<<"]";
 }
 
-//implemented in rmath.cpp
+//implemented in rsw_math.cpp
 mat3 operator*(const mat3& a, const mat3& b);
 void load_rotation_mat3(mat3& mat, vec3 v, float angle);
 

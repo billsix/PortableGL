@@ -26,6 +26,11 @@ CMakeCache.txt
 cmake_install.cmake
 stats/*
 scratch/*
+references/*
+tags
+
+demos/imgui/imgui.ini
+demos/imgui/example_sdl_sdlrenderer
 
 */obj/*
 
@@ -47,6 +52,7 @@ examples/c_ex3
 examples/ex1
 examples/ex2
 examples/ex3
+examples/line_testing
 
 demos/cubemap
 demos/grass
@@ -57,8 +63,12 @@ demos/swrenderer
 demos/texturing
 demos/gears
 demos/modelviewer
+demos/multidraw
+demos/testprimitives
 demos/pointsprites
 demos/raytracing_1weekend
+demos/sdl_renderer_imgui
+demos/imgui.ini
 demos/assimp_convert
 
 testing/run_tests

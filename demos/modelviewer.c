@@ -156,7 +156,7 @@ int main(int argc, char** argv)
 	if (argc == 1) {
 		printf("usage: %s [model_file]\n", argv[0]);
 		printf("No model given, so generating a sphere...\n");
-		generate_sphere(&verts, &tris, &texcoords, 5.0f, 14, 7);
+		make_sphere(&verts, &tris, &texcoords, 5.0f, 14, 7);
 
 		// translate so it's in the same position as the models
 		// couuld also change the camera but meh
@@ -168,7 +168,7 @@ int main(int argc, char** argv)
 			verts.size = 0;
 			tris.size = 0;
 			texcoords.size = 0;
-			generate_sphere(&verts, &tris, &texcoords, 5.0f, 14, 7);
+			make_sphere(&verts, &tris, &texcoords, 5.0f, 14, 7);
 			for (int i=0; i<verts.size; ++i)
 				verts.a[i] = add_vec3s(verts.a[i], offset);
 		}
@@ -221,7 +221,7 @@ int main(int argc, char** argv)
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), 0);
 	glEnableVertexAttribArray(4);
-	glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), sizeof(vec3));
+	pglVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), sizeof(vec3));
 
 
 
@@ -301,13 +301,6 @@ void normal_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 	builtins->gl_FragColor = ((My_Uniforms*)uniforms)->v_color;
 }
 
-inline vec3 reflect(vec3 i, vec3 n)
-{
-	//return i - 2 * dot_vec3s(i, n) * n;
-	return sub_vec3s(i, scale_vec3(n, 2*dot_vec3s(i, n)));
-}
-extern inline vec3 reflect(vec3 i, vec3 n);
-
 void gouraud_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	//convenience
@@ -333,7 +326,7 @@ void gouraud_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtin
 	color = add_vec3s(color, scale_vec3(u->Kd, diff_intensity));
 
 
-	vec3 r = reflect(negate_vec3(light_dir), eye_normal);
+	vec3 r = reflect_vec3(negate_vec3(light_dir), eye_normal);
 	tmp = dot_vec3s(eye_dir, r);
 	float spec = MAX(0.0, tmp);
 	float fspec;
@@ -394,7 +387,7 @@ void phong_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 
 	color = add_vec3s(color, scale_vec3(u->Kd, diff_intensity));
 
-	vec3 r = reflect(negate_vec3(s), n);
+	vec3 r = reflect_vec3(negate_vec3(s), n);
 	tmp = dot_vec3s(v, r);
 	float spec = MAX(0.0, tmp);
 	float fspec;

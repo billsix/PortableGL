@@ -2,7 +2,7 @@
 solution "Demos"
 	configurations { "Debug", "Release" }
 	
-	includedirs { "../", "../glcommon", "/usr/local/include" }
+	includedirs { "../", "../glcommon", "/usr/include/SDL2" }
 
 	-- stuff up here common to all projects
 	kind "ConsoleApp"
@@ -161,6 +161,45 @@ solution "Demos"
 			"../glcommon/stb_image.h"
 		}
 
+	project "multidraw"
+		language "C++"
+		configuration { "gmake" }
+			buildoptions { "-fno-rtti", "-fno-exceptions", "-fno-strict-aliasing", "-Wunused-variable", "-Wreturn-type" }
+			links { "SDL2", "m" }
+		files {
+			"./multidraw.cpp",
+			"../glcommon/rsw_math.cpp",
+			"../glcommon/rsw_matstack.h",
+		}
+
+	project "testprimitives"
+		language "C++"
+		configuration { "gmake" }
+			buildoptions { "-fno-rtti", "-fno-exceptions", "-fno-strict-aliasing", "-Wunused-variable", "-Wreturn-type" }
+			links { "SDL2", "m" }
+		files {
+			"./testprimitives.cpp",
+			"../glcommon/rsw_math.cpp",
+			"../glcommon/rsw_halfedge.cpp",
+			"../glcommon/rsw_primitives.cpp",
+		}
+
+	project "sdl_renderer_imgui"
+		language "C++"
+		configuration { "gmake" }
+			buildoptions { "-fno-rtti", "-fno-exceptions", "-fno-strict-aliasing", "-Wunused-variable", "-Wreturn-type", "-fopenmp" }
+			links { "SDL2", "m", "gomp" }
+		includedirs { "./imgui", "./imgui/backends" }
+		files {
+			"./imgui/main.cpp",
+			--"./imgui/imgui.cpp",
+			--"./imgui/imgui_demo.cpp",
+			--"./imgui/imgui_draw.cpp",
+			--"./imgui/imgui_tables.cpp",
+			--"./imgui/imgui_widgets.cpp",
+			"./imgui/backends/imgui_impl_sdl.cpp",
+			"./imgui/backends/imgui_impl_sdlrenderer.cpp"
+		}
 
 
 	project "assimp_convert"

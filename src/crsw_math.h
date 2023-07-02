@@ -847,8 +847,28 @@ inline vec4 mult_mat4_vec4(mat4 m, vec4 v)
 	return r;
 }
 
+void mult_mat2_mat2(mat2 c, mat2 a, mat2 b);
+
+void mult_mat3_mat3(mat3 c, mat3 a, mat3 b);
 
 void mult_mat4_mat4(mat4 c, mat4 a, mat4 b);
+
+inline void load_rotation_mat2(mat2 mat, float angle)
+{
+#ifndef ROW_MAJOR
+	mat[0] = cos(angle);
+	mat[2] = -sin(angle);
+
+	mat[1] = sin(angle);
+	mat[3] = cos(angle);
+#else
+	mat[0] = cos(angle);
+	mat[1] = -sin(angle);
+
+	mat[2] = sin(angle);
+	mat[3] = cos(angle);
+#endif
+}
 
 void load_rotation_mat3(mat3 mat, vec3 v, float angle);
 
@@ -1189,6 +1209,23 @@ inline float line_findy(Line* line, float x)
 inline float line_findx(Line* line, float y)
 {
 	return -(line->B*y + line->C)/line->A;
+}
+
+// return squared distance from c to line segment between a and b
+inline float sq_dist_pt_segment2d(vec2 a, vec2 b, vec2 c)
+{
+	vec2 ab = sub_vec2s(b, a);
+	vec2 ac = sub_vec2s(c, a);
+	vec2 bc = sub_vec2s(c, b);
+	float e = dot_vec2s(ac, ab);
+
+	// cases where c projects outside ab
+	if (e <= 0.0f) return dot_vec2s(ac, ac);
+	float f = dot_vec2s(ab, ab);
+	if (e >= f) return dot_vec2s(bc, bc);
+
+	// handle cases where c projects onto ab
+	return dot_vec2s(ac, ac) - e * e / f;
 }
 
 

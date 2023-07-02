@@ -16,7 +16,7 @@
 
 
 #define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -116,7 +116,6 @@ int main(int argc, char** argv)
 	{
 
 	GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
-	GLenum noperspective[4] = { NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE };
 
 	rsw::Color test_texture[6][9];
 
@@ -162,8 +161,8 @@ int main(int argc, char** argv)
 	vector<vec3> box_verts;
 	vector<vec2> box_tex;
 	vector<ivec3> box_tris;
-	generate_box(box_verts, box_tris, box_tex, 40, 40, 40, false, ivec3(1,1,1), vec3(-20, -20, -20));
-	//generate_box(box_verts, box_tris, box_tex, 40, 40, 40, true, ivec3(2,2,2), vec3(-20, -20, -20));
+	make_box(box_verts, box_tris, box_tex, 40, 40, 40, false, ivec3(1,1,1), vec3(-20, -20, -20));
+	//make_box(box_verts, box_tris, box_tex, 40, 40, 40, true, ivec3(2,2,2), vec3(-20, -20, -20));
 	vector<vec3> box_draw_verts;
 
 
@@ -172,7 +171,7 @@ int main(int argc, char** argv)
 	vector<vec3> sphere_verts;
 	vector<vec2> sphere_tex;
 	vector<ivec3> sphere_tris;
-	generate_sphere(sphere_verts, sphere_tris, sphere_tex, 1.0f, 52, 26);
+	make_sphere(sphere_verts, sphere_tris, sphere_tex, 1.0f, 52, 26);
 	vector<vec3> sphere_draw_verts;
 
 	expand_verts(sphere_draw_verts, sphere_verts, sphere_tris);
@@ -212,7 +211,7 @@ int main(int argc, char** argv)
 	glUseProgram(reflection_shader);
 	pglSetUniform(&the_uniforms);
 
-	GLuint skybox_shader = pglCreateProgram(skybox_vs, skybox_fs, 3, noperspective, GL_FALSE);
+	GLuint skybox_shader = pglCreateProgram(skybox_vs, skybox_fs, 3, smooth, GL_FALSE);
 	glUseProgram(skybox_shader);
 
 	pglSetUniform(&the_uniforms);
@@ -447,6 +446,18 @@ bool handle_events()
 	}
 	if (state[SDL_SCANCODE_S]) {
 		camera_frame.move_forward(time * -MOVE_SPEED);
+	}
+	if (state[SDL_SCANCODE_Q]) {
+		camera_frame.rotate_local_z(DEG_TO_RAD(-60*time));
+	}
+	if (state[SDL_SCANCODE_E]) {
+		camera_frame.rotate_local_z(DEG_TO_RAD(60*time));
+	}
+	if (state[SDL_SCANCODE_LSHIFT]) {
+		camera_frame.move_up(time * MOVE_SPEED);
+	}
+	if (state[SDL_SCANCODE_SPACE]) {
+		camera_frame.move_up(time * -MOVE_SPEED);
 	}
 
 	last_time = cur_time;

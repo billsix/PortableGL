@@ -3,23 +3,37 @@
 
 #include <stdint.h>
 
-typedef uint32_t GLuint;
-typedef int32_t  GLint;
-typedef int64_t  GLint64;
-typedef uint64_t GLuint64;
-typedef uint16_t GLushort;
-typedef int16_t  GLshort;
-typedef uint8_t  GLubyte;
-typedef int8_t   GLbyte;
-typedef char     GLchar;
-typedef int32_t  GLsizei;  //they use plain int not unsigned like you'd think
-typedef int      GLenum;
-typedef int      GLbitfield;
-typedef float    GLfloat;
-typedef float    GLclampf;
-typedef double   GLdouble;
-typedef void     GLvoid;
-typedef uint8_t  GLboolean;
+typedef uint8_t   GLboolean;
+typedef char      GLchar;
+typedef int8_t    GLbyte;
+typedef uint8_t   GLubyte;
+typedef int16_t   GLshort;
+typedef uint16_t  GLushort;
+typedef int32_t   GLint;
+typedef uint32_t  GLuint;
+typedef int64_t   GLint64;
+typedef uint64_t  GLuint64;
+
+//they use plain int not unsigned like you'd think
+// TODO(rswinkle) just use uint32_t, remove all checks for < 0 and
+// use for all offset/index type parameters (other than
+// VertexAttribPointer because I already folded on that and have
+// the pgl macro wrapper)
+typedef int32_t   GLsizei;
+
+typedef int32_t   GLenum;
+typedef int32_t   GLbitfield;
+
+typedef intptr_t  GLintptr;
+typedef uintptr_t GLsizeiptr;
+typedef void      GLvoid;
+
+typedef float     GLfloat;
+typedef float     GLclampf;
+
+// not used
+typedef double    GLdouble;
+typedef double    GLclampd;
 
 
 
@@ -33,7 +47,7 @@ enum
 	GL_INVALID_FRAMEBUFFER_OPERATION,
 	GL_OUT_OF_MEMORY,
 
-	//buffer types
+	//buffer types (only ARRAY_BUFFER and ELEMENT_ARRAY_BUFFER are currently used)
 	GL_ARRAY_BUFFER,
 	GL_COPY_READ_BUFFER,
 	GL_COPY_WRITE_BUFFER,
@@ -96,10 +110,10 @@ enum
 	GL_TRIANGLE_FAN,
 
 	// unsupported primitives because I don't support the geometry shader
-	GL_LINE_STRIP_AJACENCY,
-	GL_LINES_AJACENCY,
-	GL_TRIANGLES_AJACENCY,
-	GL_TRIANGLE_STRIP_AJACENCY,
+	GL_LINE_STRIP_ADJACENCY,
+	GL_LINES_ADJACENCY,
+	GL_TRIANGLES_ADJACENCY,
+	GL_TRIANGLE_STRIP_ADJACENCY,
 
 	//depth functions (and stencil funcs)
 	GL_LESS,
@@ -344,6 +358,23 @@ enum
 
 	GL_POLYGON_MODE,
 
+	GL_MAJOR_VERSION,
+	GL_MINOR_VERSION,
+
+	GL_TEXTURE_BINDING_1D,
+	GL_TEXTURE_BINDING_1D_ARRAY,
+	GL_TEXTURE_BINDING_2D,
+	GL_TEXTURE_BINDING_2D_ARRAY,
+
+	// Not supported
+	GL_TEXTURE_BINDING_2D_MULTISAMPLE,
+	GL_TEXTURE_BINDING_2D_MULTISAMPLE_ARRAY,
+
+	GL_TEXTURE_BINDING_3D,
+	GL_TEXTURE_BINDING_BUFFER,
+	GL_TEXTURE_BINDING_CUBE_MAP,
+	GL_TEXTURE_BINDING_RECTANGLE,
+
 	//shader types etc. not used, just here for compatibility add what you
 	//need so you can use your OpenGL code with PortableGL with minimal changes
 	GL_COMPUTE_SHADER,
@@ -456,7 +487,7 @@ typedef struct glVertex_Attrib
 	GLint size;      // number of components 1-4
 	GLenum type;     // GL_FLOAT, default
 	GLsizei stride;  //
-	GLsizei offset;  //
+	GLsizeiptr offset;  //
 	GLboolean normalized;
 	unsigned int buf;
 	GLboolean enabled;

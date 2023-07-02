@@ -56,6 +56,7 @@ void glBindTexture(GLenum target, GLuint texture);
 void glActiveTexture(GLenum texture);
 void glTexParameteri(GLenum target, GLenum pname, GLint param);
 void glTexParameterfv(GLenum target, GLenum pname, const GLfloat* params);
+void glTextureParameteri(GLuint texture, GLenum pname, GLint param);
 void glPixelStorei(GLenum pname, GLint param);
 void glTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid* data);
 void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid* data);
@@ -74,16 +75,26 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers);
 void glBindBuffer(GLenum target, GLuint buffer);
 void glBufferData(GLenum target, GLsizei size, const GLvoid* data, GLenum usage);
 void glBufferSubData(GLenum target, GLsizei offset, GLsizei size, const GLvoid* data);
-void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLsizei offset);
+void* glMapBuffer(GLenum target, GLenum access);
+void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid* pointer);
 void glVertexAttribDivisor(GLuint index, GLuint divisor);
 void glEnableVertexAttribArray(GLuint index);
 void glDisableVertexAttribArray(GLuint index);
 void glDrawArrays(GLenum mode, GLint first, GLsizei count);
+void glMultiDrawArrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei drawcount);
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, GLsizei offset);
+void glMultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, GLsizei* indices, GLsizei drawcount);
 void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
 void glDrawArraysInstancedBaseInstance(GLenum mode, GLint first, GLsizei count, GLsizei primcount, GLuint baseinstance);
 void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, GLsizei offset, GLsizei primcount);
 void glDrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type, GLsizei offset, GLsizei primcount, GLuint baseinstance);
+
+//DSA functions (from OpenGL 4.5+)
+#define glCreateBuffers(n, buffers) glGenBuffers(n, buffers)
+void glNamedBufferData(GLuint buffer, GLsizei size, const GLvoid* data, GLenum usage);
+void glNamedBufferSubData(GLuint buffer, GLsizei offset, GLsizei size, const GLvoid* data);
+void* glMapNamedBuffer(GLuint buffer, GLenum access);
+void glCreateTextures(GLenum target, GLsizei n, GLuint* textures);
 
 
 //shaders

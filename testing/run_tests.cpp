@@ -13,17 +13,9 @@
 
 #include <stdio.h>
 
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
-
 #define WIDTH 640
 #define HEIGHT 640
 
-
-
-SDL_Window* window;
-SDL_Renderer* ren;
-SDL_Texture* tex;
 
 u32* bbufpix;
 
@@ -56,7 +48,7 @@ typedef struct pgl_test
 	int num;
 } pgl_test;
 
-#define NUM_TESTS 34
+#define NUM_TESTS 35
 
 pgl_test test_suite[NUM_TESTS] =
 {
@@ -70,6 +62,7 @@ pgl_test test_suite[NUM_TESTS] =
 	{ "zbuf_depthon", zbuf_test, 1 },
 	{ "zbuf_depthon_greater", zbuf_test, 2 },
 	{ "zbuf_depthon_fliprange", zbuf_test, 3 },
+	{ "zbuf_depthon_maskoff", zbuf_test, 4 },
 
 	{ "test_edges", test_edges },
 
@@ -123,20 +116,23 @@ int main(int argc, char** argv)
 		int found;
 		for (int i=1; i<argc; i++) {
 			found = find_test(argv[i]);
-			if (found >= 0)
+			if (found >= 0) {
 				have_failure |= run_test(found);
-			else
+			} else {
 				printf("Error: could not find test '%s', skipping\n", argv[i]);
+			}
+			putchar('\n');
 		}
 	}
 
+	// TODO output nothing except on failure?
 	if (!have_failure) {
 		puts("All tests passed");
 	}
 
 
 
-	return 0;
+	return have_failure;
 }
 
 int find_test(char* name)

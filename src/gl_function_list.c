@@ -71,12 +71,21 @@ glVertexAttribDivisor
 glEnableVertexAttribArray
 glDisableVertexAttribArray
 glDrawArrays
+glMultiDrawArrays
 glDrawElements
+glMultiDrawElements
 glDrawArraysInstanced
 glDrawArraysInstancedBaseInstance
 glDrawElementsInstanced
 glDrawElementsInstancedBaseInstance
 
+//DSA functions (from OpenGL 4.5+)
+glCreateBuffers
+glNamedBufferData
+glNamedBufferSubData
+glCreateTextures
+glTextureParameteri
+glTextureParameterfv
 
 //shaders
 pglCreateProgram

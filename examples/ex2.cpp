@@ -11,7 +11,7 @@
 
 
 #define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -128,7 +128,7 @@ int main(int argc, char** argv)
 		SDL_RenderPresent(ren);
 	}
 
-	cleanup();	
+	cleanup();
 
 	return 0;
 }

@@ -5,6 +5,8 @@ void pglClearScreen();
 //an existing shader.  You'd have to switch between 2 almost identical shaders.
 void pglSetInterp(GLsizei n, GLenum* interpolation);
 
+#define pglVertexAttribPointer(index, size, type, normalized, stride, offset) \
+glVertexAttribPointer(index, size, type, normalized, stride, (void*)(offset))
 
 //TODO
 //pglDrawRect(x, y, w, h)
@@ -27,7 +29,9 @@ void pglGetTextureData(GLuint texture, GLvoid** data);
 void put_pixel(Color color, int x, int y);
 
 //Should I have it take a glFramebuffer as paramater?
-void put_line(Color the_color, float x1, float y1, float x2, float y2);
+int put_line(Color the_color, float x1, float y1, float x2, float y2);
+void put_wide_line_simple(Color the_color, float width, float x1, float y1, float x2, float y2);
+void put_wide_line2(Color the_color, float width, float x1, float y1, float x2, float y2);
 
 void put_triangle(Color c1, Color c2, Color c3, vec2 p1, vec2 p2, vec2 p3);
 

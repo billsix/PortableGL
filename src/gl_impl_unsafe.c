@@ -107,12 +107,12 @@ int init_glContext(glContext* context, u32** back, int w, int h, int bitdepth, u
 	context->user_alloced_backbuf = *back != NULL;
 	if (!*back) {
 		int bytes_per_pixel = (bitdepth + CHAR_BIT-1) / CHAR_BIT;
-		*back = (u32*) malloc(w * h * bytes_per_pixel);
+		*back = (u32*)malloc(w * h * bytes_per_pixel);
 		if (!*back)
 			return 0;
 	}
 
-	context->zbuf.buf = (u8*) malloc(w*h * sizeof(float));
+	context->zbuf.buf = (u8*)malloc(w*h * sizeof(float));
 	if (!context->zbuf.buf) {
 		if (!context->user_alloced_backbuf) {
 			free(*back);
@@ -121,7 +121,7 @@ int init_glContext(glContext* context, u32** back, int w, int h, int bitdepth, u
 		return 0;
 	}
 
-	context->stencil_buf.buf = (u8*) malloc(w*h);
+	context->stencil_buf.buf = (u8*)malloc(w*h);
 	if (!context->stencil_buf.buf) {
 		if (!context->user_alloced_backbuf) {
 			free(*back);
@@ -174,6 +174,7 @@ int init_glContext(glContext* context, u32** back, int w, int h, int bitdepth, u
 	context->clear_color = make_Color(0, 0, 0, 0);
 	SET_VEC4(context->blend_color, 0, 0, 0, 0);
 	context->point_size = 1.0f;
+	context->line_width = 1.0f;
 	context->clear_depth = 1.0f;
 	context->depth_range_near = 0.0f;
 	context->depth_range_far = 1.0f;
@@ -253,23 +254,27 @@ int init_glContext(glContext* context, u32** back, int w, int h, int bitdepth, u
 	cvec_push_glVertex_Array(&context->vertex_arrays, tmp_va);
 	context->cur_vertex_array = 0;
 
-	//setup buffers and textures
-	//need to push back once since 0 is invalid
-	//valid buffers have to start at position 1
+	// buffer 0 is invalid
 	glBuffer tmp_buf;
 	tmp_buf.user_owned = GL_TRUE;
 	tmp_buf.deleted = GL_FALSE;
+	cvec_push_glBuffer(&context->buffers, tmp_buf);
 
+	// texture 0 is valid/default
 	glTexture tmp_tex;
-	tmp_tex.user_owned = GL_TRUE;
-	tmp_tex.deleted = GL_FALSE;
-	tmp_tex.format = GL_RGBA;
 	tmp_tex.type = GL_TEXTURE_UNBOUND;
+	tmp_tex.mag_filter = GL_LINEAR;
+	tmp_tex.min_filter = GL_LINEAR;
+	tmp_tex.wrap_s = GL_REPEAT;
+	tmp_tex.wrap_t = GL_REPEAT;
+	tmp_tex.wrap_r = GL_REPEAT;
 	tmp_tex.data = NULL;
+	tmp_tex.deleted = GL_FALSE;
+	tmp_tex.user_owned = GL_TRUE;
+	tmp_tex.format = GL_RGBA;
 	tmp_tex.w = 0;
 	tmp_tex.h = 0;
 	tmp_tex.d = 0;
-	cvec_push_glBuffer(&context->buffers, tmp_buf);
 	cvec_push_glTexture(&context->textures, tmp_tex);
 
 	return 1;
@@ -318,23 +323,15 @@ void set_glContext(glContext* context)
 void* pglResizeFramebuffer(size_t w, size_t h)
 {
 	u8* tmp;
-	tmp = (u8*) realloc(c->zbuf.buf, w*h * sizeof(float));
-	if (!tmp) {
-		if (c->error == GL_NO_ERROR)
-			c->error = GL_OUT_OF_MEMORY;
-		return NULL;
-	}
+	tmp = (u8*)realloc(c->zbuf.buf, w*h * sizeof(float));
+
 	c->zbuf.buf = tmp;
 	c->zbuf.w = w;
 	c->zbuf.h = h;
 	c->zbuf.lastrow = c->zbuf.buf + (h-1)*w*sizeof(float);
 
-	tmp = (u8*) realloc(c->back_buffer.buf, w*h * sizeof(u32));
-	if (!tmp) {
-		if (c->error == GL_NO_ERROR)
-			c->error = GL_OUT_OF_MEMORY;
-		return NULL;
-	}
+	tmp = (u8*)realloc(c->back_buffer.buf, w*h * sizeof(u32));
+
 	c->back_buffer.buf = tmp;
 	c->back_buffer.w = w;
 	c->back_buffer.h = h;
@@ -349,7 +346,7 @@ GLubyte* glGetString(GLenum name)
 {
 	static GLubyte vendor[] = "Robert Winkler";
 	static GLubyte renderer[] = "PortableGL";
-	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.95";
+	static GLubyte version[] = "OpenGL 3.x-ish PortableGL 0.97";
 	static GLubyte shading_language[] = "C/C++";
 
 	switch (name) {
@@ -411,23 +408,23 @@ void glDeleteVertexArrays(GLsizei n, const GLuint* arrays)
 
 void glGenBuffers(GLsizei n, GLuint* buffers)
 {
-	glBuffer tmp;
-	tmp.user_owned = GL_TRUE;  // NOTE: Doesn't really matter at this point
-	tmp.data = NULL;
-	tmp.deleted = GL_FALSE;
-
 	//fill up empty slots first
-	--n;
-	for (int i=1; i<c->buffers.size && n>=0; ++i) {
+	int j = 0;
+	for (int i=1; i<c->buffers.size && j<n; ++i) {
 		if (c->buffers.a[i].deleted) {
-			c->buffers.a[i] = tmp;
-			buffers[n--] = i;
+			c->buffers.a[i].deleted = GL_FALSE;
+			buffers[j++] = i;
 		}
 	}
 
-	for (; n>=0; --n) {
-		cvec_push_glBuffer(&c->buffers, tmp);
-		buffers[n] = c->buffers.size-1;
+	if (j != n) {
+		int s = c->buffers.size;
+		cvec_extend_glBuffer(&c->buffers, n-j);
+		for (int i=s; j<n; i++) {
+			c->buffers.a[i].data = NULL;
+			c->buffers.a[i].deleted = GL_FALSE;
+			buffers[j++] = i;
+		}
 	}
 }
 
@@ -446,40 +443,69 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers)
 
 		if (!c->buffers.a[buffers[i]].user_owned) {
 			free(c->buffers.a[buffers[i]].data);
-			c->buffers.a[buffers[i]].data = NULL;
 		}
-
+		c->buffers.a[buffers[i]].data = NULL;
 		c->buffers.a[buffers[i]].deleted = GL_TRUE;
 	}
 }
 
 void glGenTextures(GLsizei n, GLuint* textures)
 {
-	glTexture tmp;
-	//SET_VEC4(tmp.border_color, 0, 0, 0, 0);
-	tmp.mag_filter = GL_LINEAR;
-	tmp.min_filter = GL_LINEAR; //NOTE: spec says should be mipmap_linear
-	tmp.wrap_s = GL_REPEAT;
-	tmp.wrap_t = GL_REPEAT;
-	tmp.data = NULL;
-	tmp.deleted = GL_FALSE;
-	tmp.user_owned = GL_TRUE;  // NOTE: could be either before data
-	tmp.format = GL_RGBA;
-	tmp.type = GL_TEXTURE_UNBOUND;
-	tmp.w = 0;
-	tmp.h = 0;
-	tmp.d = 0;
-
-	--n;
-	for (int i=0; i<c->textures.size && n>=0; ++i) {
+	int j = 0;
+	for (int i=0; i<c->textures.size && j<n; ++i) {
 		if (c->textures.a[i].deleted) {
-			c->textures.a[i] = tmp;
-			textures[n--] = i;
+			c->textures.a[i].deleted = GL_FALSE;
+			c->textures.a[i].type = GL_TEXTURE_UNBOUND;
+			textures[j++] = i;
 		}
 	}
-	for (; n>=0; --n) {
-		cvec_push_glTexture(&c->textures, tmp);
-		textures[n] = c->textures.size-1;
+	if (j != n) {
+		int s = c->textures.size;
+		cvec_extend_glTexture(&c->textures, n-j);
+		for (int i=s; j<n; i++) {
+			c->textures.a[i].deleted = GL_FALSE;
+			c->textures.a[i].type = GL_TEXTURE_UNBOUND;
+			textures[j++] = i;
+		}
+	}
+}
+
+// I just set everything even if not everything applies to the type
+// see section 3.8.15 pg 181 of spec for what it's supposed to be
+#define INIT_TEX(tex, target) \
+	do { \
+	tex.type = target; \
+	tex.mag_filter = GL_LINEAR; \
+	tex.min_filter = GL_LINEAR; \
+	tex.wrap_s = GL_REPEAT; \
+	tex.wrap_t = GL_REPEAT; \
+	tex.wrap_r = GL_REPEAT; \
+	tex.data = NULL; \
+	tex.deleted = GL_FALSE; \
+	tex.user_owned = GL_TRUE; \
+	tex.format = GL_RGBA; \
+	tex.w = 0; \
+	tex.h = 0; \
+	tex.d = 0; \
+	} while (0)
+
+void glCreateTextures(GLenum target, GLsizei n, GLuint* textures)
+{
+	target -= GL_TEXTURE_UNBOUND + 1;
+	int j = 0;
+	for (int i=0; i<c->textures.size && j<n; ++i) {
+		if (c->textures.a[i].deleted) {
+			INIT_TEX(c->textures.a[i], target);
+			textures[j++] = i;
+		}
+	}
+	if (j != n) {
+		int s = c->textures.size;
+		cvec_extend_glTexture(&c->textures, n-j);
+		for (int i=s; j<n; i++) {
+			INIT_TEX(c->textures.a[i], target);
+			textures[j++] = i;
+		}
 	}
 }
 
@@ -490,8 +516,8 @@ void glDeleteTextures(GLsizei n, GLuint* textures)
 		if (!textures[i] || textures[i] >= c->textures.size)
 			continue;
 
-		// NOTE(rswinkle): type is stored as correct index not the raw enum value so no need to
-		// subtract here see glBindTexture
+		// NOTE(rswinkle): type is stored as correct index not the raw enum value
+		// so no need to subtract here see glBindTexture
 		type = c->textures.a[textures[i]].type;
 		if (textures[i] == c->bound_textures[type])
 			c->bound_textures[type] = 0;
@@ -527,15 +553,9 @@ void glBufferData(GLenum target, GLsizei size, const GLvoid* data, GLenum usage)
 {
 	target -= GL_ARRAY_BUFFER;
 
-	//always NULL or valid
-	free(c->buffers.a[c->bound_buffers[target]].data);
-
-	if (!(c->buffers.a[c->bound_buffers[target]].data = (u8*) malloc(size))) {
-		if (!c->error)
-			c->error = GL_OUT_OF_MEMORY;
-		// GL state is undefined from here on
-		return;
-	}
+	// the spec says any pre-existing data store is deleted there's no reason to
+	// c->buffers.a[c->bound_buffers[target]].data is always NULL or valid
+	c->buffers.a[c->bound_buffers[target]].data = (u8*)realloc(c->buffers.a[c->bound_buffers[target]].data, size);
 
 	if (data) {
 		memcpy(c->buffers.a[c->bound_buffers[target]].data, data, size);
@@ -556,15 +576,61 @@ void glBufferSubData(GLenum target, GLsizei offset, GLsizei size, const GLvoid* 
 	memcpy(&c->buffers.a[c->bound_buffers[target]].data[offset], data, size);
 }
 
+void glNamedBufferData(GLuint buffer, GLsizei size, const GLvoid* data, GLenum usage)
+{
+	//always NULL or valid
+	free(c->buffers.a[buffer].data);
+
+	c->buffers.a[buffer].data = (u8*)malloc(size);
+
+	if (data) {
+		memcpy(c->buffers.a[buffer].data, data, size);
+	}
+
+	c->buffers.a[buffer].user_owned = GL_FALSE;
+	c->buffers.a[buffer].size = size;
+
+	if (c->buffers.a[buffer].type == GL_ELEMENT_ARRAY_BUFFER - GL_ARRAY_BUFFER) {
+		c->vertex_arrays.a[c->cur_vertex_array].element_buffer = buffer;
+	}
+}
+
+void glNamedBufferSubData(GLuint buffer, GLsizei offset, GLsizei size, const GLvoid* data)
+{
+	memcpy(&c->buffers.a[buffer].data[offset], data, size);
+}
+
 void glBindTexture(GLenum target, GLuint texture)
 {
 	target -= GL_TEXTURE_UNBOUND + 1;
 
 	if (c->textures.a[texture].type == GL_TEXTURE_UNBOUND) {
 		c->bound_textures[target] = texture;
-		c->textures.a[texture].type = target;
+		INIT_TEX(c->textures.a[texture], target);
 	} else {
 		c->bound_textures[target] = texture;
+	}
+}
+
+static void set_texparami(glTexture* tex, GLenum pname, GLint param)
+{
+	if (pname == GL_TEXTURE_MIN_FILTER) {
+		//TODO mipmapping isn't actually supported, not sure it's worth trouble/perf hit
+		//just adding the enums to make porting easier
+		if (param == GL_NEAREST_MIPMAP_NEAREST || param == GL_NEAREST_MIPMAP_LINEAR)
+			param = GL_NEAREST;
+		if (param == GL_LINEAR_MIPMAP_NEAREST || param == GL_LINEAR_MIPMAP_LINEAR)
+			param = GL_LINEAR;
+
+		tex->min_filter = param;
+	} else if (pname == GL_TEXTURE_MAG_FILTER) {
+		tex->mag_filter = param;
+	} else if (pname == GL_TEXTURE_WRAP_S) {
+		tex->wrap_s = param;
+	} else if (pname == GL_TEXTURE_WRAP_T) {
+		tex->wrap_t = param;
+	} else if (pname == GL_TEXTURE_WRAP_R) {
+		tex->wrap_r = param;
 	}
 }
 
@@ -573,26 +639,12 @@ void glTexParameteri(GLenum target, GLenum pname, GLint param)
 	//shift to range 0 - NUM_TEXTURES-1 to access bound_textures array
 	target -= GL_TEXTURE_UNBOUND + 1;
 
-	if (pname == GL_TEXTURE_MIN_FILTER) {
+	set_texparami(&c->textures.a[c->bound_textures[target]], pname, param);
+}
 
-		//TODO mipmapping isn't actually supported, not sure it's worth trouble/perf hit
-		//just adding the enums to make porting easier
-		if (param == GL_NEAREST_MIPMAP_NEAREST || param == GL_NEAREST_MIPMAP_LINEAR)
-			param = GL_NEAREST;
-		if (param == GL_LINEAR_MIPMAP_NEAREST || param == GL_LINEAR_MIPMAP_LINEAR)
-			param = GL_LINEAR;
-
-		c->textures.a[c->bound_textures[target]].min_filter = param;
-
-	} else if (pname == GL_TEXTURE_MAG_FILTER) {
-		c->textures.a[c->bound_textures[target]].mag_filter = param;
-	} else if (pname == GL_TEXTURE_WRAP_S) {
-		c->textures.a[c->bound_textures[target]].wrap_s = param;
-	} else if (pname == GL_TEXTURE_WRAP_T) {
-		c->textures.a[c->bound_textures[target]].wrap_t = param;
-	} else if (pname == GL_TEXTURE_WRAP_R) {
-		c->textures.a[c->bound_textures[target]].wrap_r = param;
-	}
+void glTextureParameteri(GLuint texture, GLenum pname, GLint param)
+{
+	set_texparami(&c->textures.a[texture], pname, param);
 }
 
 void glPixelStorei(GLenum pname, GLint param)
@@ -621,24 +673,14 @@ void glTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 	else if (format == GL_RG) components = 2;
 	else if (format == GL_RGB || format == GL_BGR) components = 3;
 	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
 
 	// NULL or valid
 	free(c->textures.a[cur_tex].data);
 
 	//TODO support other internal formats? components should be of internalformat not format
-	if (!(c->textures.a[cur_tex].data = (u8*) malloc(width * components))) {
-		if (!c->error)
-			c->error = GL_OUT_OF_MEMORY;
-		//undefined state now
-		return;
-	}
+	c->textures.a[cur_tex].data = (u8*)malloc(width * components);
 
-	u32* texdata = (u32*) c->textures.a[cur_tex].data;
+	u32* texdata = (u32*)c->textures.a[cur_tex].data;
 
 	if (data)
 		memcpy(&texdata[0], data, width*sizeof(u32));
@@ -659,11 +701,6 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 	else if (format == GL_RG) components = 2;
 	else if (format == GL_RGB || format == GL_BGR) components = 3;
 	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
 
 	int cur_tex;
 
@@ -682,12 +719,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 		free(c->textures.a[cur_tex].data);
 
 		//TODO support other internal formats? components should be of internalformat not format
-		if (!(c->textures.a[cur_tex].data = (u8*) malloc(height * byte_width))) {
-			if (!c->error)
-				c->error = GL_OUT_OF_MEMORY;
-			//undefined state now
-			return;
-		}
+		c->textures.a[cur_tex].data = (u8*)malloc(height * byte_width);
 
 		if (data) {
 			if (!padding_needed) {
@@ -714,18 +746,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 			c->textures.a[cur_tex].w = width;
 			c->textures.a[cur_tex].h = width; //same cause square
 
-			if (!(c->textures.a[cur_tex].data = (u8*) malloc(mem_size))) {
-				if (!c->error)
-					c->error = GL_OUT_OF_MEMORY;
-				//undefined state now
-				return;
-			}
-		} else if (c->textures.a[cur_tex].w != width) {
-			//TODO spec doesn't say all sides must have same dimensions but it makes sense
-			//and this site suggests it http://www.opengl.org/wiki/Cubemap_Texture
-			if (!c->error)
-				c->error = GL_INVALID_VALUE;
-			return;
+			c->textures.a[cur_tex].data = (u8*)malloc(mem_size);
 		}
 
 		target -= GL_TEXTURE_CUBE_MAP_POSITIVE_X; //use target as plane index
@@ -762,11 +783,6 @@ void glTexImage3D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 	else if (format == GL_RG) components = 2;
 	else if (format == GL_RGB || format == GL_BGR) components = 3;
 	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
 
 	int byte_width = width * components;
 	int padding_needed = byte_width % c->unpack_alignment;
@@ -776,14 +792,9 @@ void glTexImage3D(GLenum target, GLint level, GLint internalFormat, GLsizei widt
 	free(c->textures.a[cur_tex].data);
 
 	//TODO support other internal formats? components should be of internalformat not format
-	if (!(c->textures.a[cur_tex].data = (u8*) malloc(width*height*depth * components))) {
-		if (!c->error)
-			c->error = GL_OUT_OF_MEMORY;
-		//undefined state now
-		return;
-	}
+	c->textures.a[cur_tex].data = (u8*)malloc(width*height*depth * components);
 
-	u32* texdata = (u32*) c->textures.a[cur_tex].data;
+	u32* texdata = (u32*)c->textures.a[cur_tex].data;
 
 	if (data) {
 		if (!padding_needed) {
@@ -856,7 +867,7 @@ void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
 	}
 }
 
-void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLsizei offset)
+void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid* pointer)
 {
 	glVertex_Attrib* v = &(c->vertex_arrays.a[c->cur_vertex_array].vertex_attribs[index]);
 	v->size = size;
@@ -865,7 +876,7 @@ void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean norm
 	//TODO expand for other types etc.
 	v->stride = (stride) ? stride : size*sizeof(GLfloat);
 
-	v->offset = offset;
+	v->offset = (GLsizeiptr)pointer;
 	v->normalized = normalized;
 	// I put ARRAY_BUFFER-itself instead of 0 to reinforce that bound_buffers is indexed that way, buffer type - GL_ARRAY_BUFFER
 	v->buf = c->bound_buffers[GL_ARRAY_BUFFER-GL_ARRAY_BUFFER]; //can be 0 if offset is 0/NULL
@@ -908,12 +919,31 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count)
 	run_pipeline(mode, first, count, 0, 0, GL_FALSE);
 }
 
+void glMultiDrawArrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei drawcount)
+{
+	for (GLsizei i=0; i<drawcount; i++) {
+		if (!count[i]) continue;
+		run_pipeline(mode, first[i], count[i], 0, 0, GL_FALSE);
+	}
+}
+
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, GLsizei offset)
 {
 	if (!count)
 		return;
 	c->buffers.a[c->vertex_arrays.a[c->cur_vertex_array].element_buffer].type = type;
 	run_pipeline(mode, offset, count, 0, 0, GL_TRUE);
+}
+
+void glMultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, GLsizei* indices, GLsizei drawcount)
+{
+	// TODO I assume this belongs here since I have it in DrawElements
+	c->buffers.a[c->vertex_arrays.a[c->cur_vertex_array].element_buffer].type = type;
+
+	for (GLsizei i=0; i<drawcount; i++) {
+		if (!count[i]) continue;
+		run_pipeline(mode, indices[i], count[i], 0, 0, GL_TRUE);
+	}
 }
 
 void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount)
@@ -1226,6 +1256,19 @@ void glGetIntegerv(GLenum pname, GLint* params)
 		params[0] = c->poly_mode_front;
 		params[1] = c->poly_mode_back;
 		break;
+
+	// TODO decide if 3.2 is the best approixmation
+	case GL_MAJOR_VERSION:             params[0] = 3; break;
+	case GL_MINOR_VERSION:             params[0] = 2; break;
+
+	case GL_TEXTURE_BINDING_1D:        params[0] = c->bound_textures[GL_TEXTURE_1D-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_2D:        params[0] = c->bound_textures[GL_TEXTURE_2D-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_3D:        params[0] = c->bound_textures[GL_TEXTURE_3D-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_1D_ARRAY:  params[0] = c->bound_textures[GL_TEXTURE_1D_ARRAY-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_2D_ARRAY:  params[0] = c->bound_textures[GL_TEXTURE_2D_ARRAY-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_RECTANGLE: params[0] = c->bound_textures[GL_TEXTURE_RECTANGLE-GL_TEXTURE_UNBOUND-1]; break;
+	case GL_TEXTURE_BINDING_CUBE_MAP:  params[0] = c->bound_textures[GL_TEXTURE_CUBE_MAP-GL_TEXTURE_UNBOUND-1]; break;
+
 	default:
 		if (!c->error)
 			c->error = GL_INVALID_ENUM;
@@ -1287,6 +1330,10 @@ void glPolygonMode(GLenum face, GLenum mode)
 	}
 }
 
+void glLineWidth(GLfloat width)
+{
+	context->line_width = width;
+}
 
 void glPointSize(GLfloat size)
 {
