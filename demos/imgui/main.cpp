@@ -48,7 +48,7 @@ typedef struct My_Uniforms
 void setup_context();
 void cleanup();
 
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void normal_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void normal_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 // Main code
@@ -106,6 +106,8 @@ int main(int, char**)
 				done = true;
 			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
 				done = true;
+			if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+				 done = true;
 		}
 
 		// Start the Dear ImGui frame
@@ -174,9 +176,9 @@ int main(int, char**)
 	return 0;
 }
 
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void normal_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	builtins->gl_Position = mult_mat4_vec4(*((mat4*)uniforms), ((vec4*)vertex_attribs)[0]);
+	builtins->gl_Position = mult_mat4_vec4(*((mat4*)uniforms), vertex_attribs[0]);
 }
 
 void normal_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
@@ -222,8 +224,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(-1);
 	}
-
-	set_glContext(&the_Context);
 
 	//SDL_RendererInfo info;
 	//SDL_GetRendererInfo(renderer, &info);

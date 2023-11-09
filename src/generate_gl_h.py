@@ -3,30 +3,61 @@
 import sys, os, glob, argparse
 
 mangle_types = """
-#ifdef MANGLE_TYPES
-#define vec2 glinternal_vec2
-#define vec3 glinternal_vec3
-#define vec4 glinternal_vec4
-#define dvec2 glinternal_dvec2
-#define dvec3 glinternal_dvec3
-#define dvec4 glinternal_dvec4
-#define ivec2 glinternal_ivec2
-#define ivec3 glinternal_ivec3
-#define ivec4 glinternal_ivec4
-#define uvec2 glinternal_uvec2
-#define uvec3 glinternal_uvec3
-#define uvec4 glinternal_uvec4
-#define mat2 glinternal_mat2
-#define mat3 glinternal_mat3
-#define mat4 glinternal_mat4
-#define Color glinternal_Color
-#define Line glinternal_Line
-#define Plane glinternal_Plane
+#ifdef PGL_MANGLE_TYPES
+#define vec2 pgl_vec2
+#define vec3 pgl_vec3
+#define vec4 pgl_vec4
+#define dvec2 pgl_dvec2
+#define dvec3 pgl_dvec3
+#define dvec4 pgl_dvec4
+#define ivec2 pgl_ivec2
+#define ivec3 pgl_ivec3
+#define ivec4 pgl_ivec4
+#define uvec2 pgl_uvec2
+#define uvec3 pgl_uvec3
+#define uvec4 pgl_uvec4
+#define mat2 pgl_mat2
+#define mat3 pgl_mat3
+#define mat4 pgl_mat4
+#define Color pgl_Color
+#define Line pgl_Line
+#define Plane pgl_Plane
+#endif
+"""
+
+# Could always define CVEC_MALLOC et al to PGL_MALLOC, rather than putting
+# it in an else block...probably not any preprocessing speed difference so
+# just personal taste.  I'll have to think about it
+macros = """
+
+#ifndef PGL_ASSERT
+#include <assert.h>
+#define PGL_ASSERT(x) assert(x)
+#endif
+
+#define CVEC_ASSERT(x) PGL_ASSERT(x)
+
+#if defined(PGL_MALLOC) && defined(PGL_FREE) && defined(PGL_REALLOC)
+/* ok */
+#elif !defined(PGL_MALLOC) && !defined(PGL_FREE) && !defined(PGL_REALLOC)
+/* ok */
+#else
+#error "Must define all or none of PGL_MALLOC, PGL_FREE, and PGL_REALLOC."
+#endif
+
+#ifndef PGL_MALLOC
+#define PGL_MALLOC(sz)      malloc(sz)
+#define PGL_REALLOC(p, sz)  realloc(p, sz)
+#define PGL_FREE(p)         free(p)
+#else
+#define CVEC_MALLOC(sz) PGL_MALLOC(sz)
+#define CVEC_REALLOC(p, sz) PGL_REALLOC(p, sz)
+#define CVEC_FREE(p) PGL_FREE(p)
 #endif
 """
 
 unmangle_types = """
-#ifdef MANGLE_TYPES
+#ifdef PGL_MANGLE_TYPES
 #undef vec2
 #undef vec3
 #undef vec4
@@ -131,6 +162,7 @@ if __name__ == "__main__":
 
     gl_h.write(mangle_types)
     gl_h.write(open_header)
+    gl_h.write(macros)
 
     gl_h.write(open("crsw_math.h").read())
 
@@ -145,6 +177,7 @@ if __name__ == "__main__":
     gl_h.write(open("gl_types.h").read())
 
     # could put these as macros at top of glcontext.h
+    # could also remove the redundancies
     gl_h.write(open("cvector_glVertex_Array.h").read())
     gl_h.write(open("cvector_glBuffer.h").read())
     gl_h.write(open("cvector_glTexture.h").read())
@@ -154,6 +187,8 @@ if __name__ == "__main__":
     gl_h.write(open("glcontext.h").read())
 
     gl_h.write(open("gl_glsl.h").read())
+
+    gl_h.write(open("pgl_std_shaders.h").read())
 
     gl_h.write(gl_prototypes)
     gl_h.write(open("pgl_ext.h").read())
@@ -176,17 +211,18 @@ if __name__ == "__main__":
     gl_h.write(cvector_impl("glVertex"))
 
     gl_h.write(cvector_impl("float"))
-
     #gl_h.write(cvector_impl("vec3"))
     #gl_h.write(cvector_impl("vec4"))
 
-
+    # maybe this should go last? does it matter beyond aesthetics?
     gl_h.write(open("gl_internal.c").read())
 
     gl_h.write(gl_impl)
 
     gl_h.write(open("gl_glsl.c").read())
     gl_h.write(open("pgl_ext.c").read())
+    gl_h.write(open("pgl_std_shaders.c").read())
+
 
 
     # This prevents it from being implemented twice if you include it again in the same

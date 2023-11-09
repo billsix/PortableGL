@@ -635,15 +635,14 @@ gears_idle(void)
 }
 
 
-void vertex_shader(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void vertex_shader(float* vs_output, vec4* v_attrs, Shader_Builtins* builtins, void* uniforms)
 {
 	//convenience
-	vec4* v_attribs = vertex_attribs;
 	vec3* vs_out = (vec3*)vs_output;;
 	My_Uniforms* u = uniforms;
 
-	//print_vec4(v_attribs[1], "\n");
-	vec4 v4 = mult_mat4_vec4(u->normal_mat, v_attribs[1]);
+	//print_vec4(v_attrs[1], "\n");
+	vec4 v4 = mult_mat4_vec4(u->normal_mat, v_attrs[1]);
 	//print_vec4(v4, "\n");
 	vec3 v3 = { v4.x, v4.y, v4.z };
 	vec3 N = norm_vec3(v3);
@@ -657,7 +656,7 @@ void vertex_shader(float* vs_output, void* vertex_attribs, Shader_Builtins* buil
 
 	vs_out[0] = scale_vec3(u->material_color, diff_intensity);
 
-	builtins->gl_Position = mult_mat4_vec4(u->mvp_mat, v_attribs[0]);
+	builtins->gl_Position = mult_mat4_vec4(u->mvp_mat, v_attrs[0]);
 }
 
 void fragment_shader(float* fs_input, Shader_Builtins* builtins, void* uniforms)
@@ -723,7 +722,7 @@ gears_init(void)
 	glEnable(GL_CULL_FACE);
 	glEnable(GL_DEPTH_TEST);
 
-	GLenum smooth[3] = { SMOOTH, SMOOTH, SMOOTH };
+	GLenum smooth[3] = { PGL_SMOOTH3 };
 
 	/* Create the shader program */
 	program = pglCreateProgram(vertex_shader, fragment_shader, 3, smooth, GL_FALSE);
@@ -810,7 +809,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_context);
 }
 
 

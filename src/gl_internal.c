@@ -2,9 +2,12 @@
 static glContext* c;
 
 static Color blend_pixel(vec4 src, vec4 dst);
+static int fragment_processing(int x, int y, float z);
 static void draw_pixel_vec2(vec4 cf, vec2 pos, float z);
-static void draw_pixel(vec4 cf, int x, int y, float z);
-static void run_pipeline(GLenum mode, GLuint first, GLsizei count, GLsizei instance, GLuint base_instance, GLboolean use_elements);
+static void draw_pixel(vec4 cf, int x, int y, float z, int do_frag_processing);
+static void run_pipeline(GLenum mode, const GLvoid* indices, GLsizei count, GLsizei instance, GLuint base_instance, GLboolean use_elements);
+
+static float calc_poly_offset(vec3 hp0, vec3 hp1, vec3 hp2);
 
 static void draw_triangle_clip(glVertex* v0, glVertex* v1, glVertex* v2, unsigned int provoke, int clip_bit);
 static void draw_triangle_point(glVertex* v0, glVertex* v1,  glVertex* v2, unsigned int provoke);
@@ -14,14 +17,16 @@ static void draw_triangle_final(glVertex* v0, glVertex* v1, glVertex* v2, unsign
 static void draw_triangle(glVertex* v0, glVertex* v1, glVertex* v2, unsigned int provoke);
 
 static void draw_line_clip(glVertex* v1, glVertex* v2);
-static void draw_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, unsigned int provoke);
+static void draw_line_shader(vec3 hp1, vec3 hp2, float w1, float w2, float* v1_out, float* v2_out, unsigned int provoke, float poly_offset);
 static void draw_thick_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, unsigned int provoke);
-static void draw_line_smooth_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, unsigned int provoke);
 
 /* this clip epsilon is needed to avoid some rounding errors after
    several clipping stages */
 
 #define CLIP_EPSILON (1E-5)
+#define CLIPZ_MASK 0x3
+#define CLIPXY_TEST(x, y) (x >= c->lx && x < c->ux && y >= c->ly && y < c->uy)
+
 
 static inline int gl_clipcode(vec4 pt)
 {
@@ -49,51 +54,89 @@ static int is_front_facing(glVertex* v0, glVertex* v1, glVertex* v2)
 	//according to docs culling is done based on window coordinates
 	//See page 3.6.1 page 116 of glspec33.core for more on rasterization, culling etc.
 	//
-	//TODO bug where it doesn't correctly cull if part of the triangle goes behind eye
-	vec3 normal, tmpvec3 = { 0, 0, 1 };
-
+	//TODO See if there's a way to determine front facing before
+	// clipping the near plane (vertex behind the eye seems to mess
+	// up winding).  If yes, can refactor to cull early and handle
+	// line and point modes separately
 	vec3 p0 = vec4_to_vec3h(v0->screen_space);
 	vec3 p1 = vec4_to_vec3h(v1->screen_space);
 	vec3 p2 = vec4_to_vec3h(v2->screen_space);
 
-	//float a;
+	float a;
 
 	//method from spec
-	//a = p0.x*p1.y - p1.x*p0.y + p1.x*p2.y - p2.x*p1.y + p2.x*p0.y - p0.x*p2.y;
+	a = p0.x*p1.y - p1.x*p0.y + p1.x*p2.y - p2.x*p1.y + p2.x*p0.y - p0.x*p2.y;
 	//a /= 2;
 
-	normal = cross_product(sub_vec3s(p1, p0), sub_vec3s(p2, p0));
-
 	if (c->front_face == GL_CW) {
-		//a = -a;
-		normal = negate_vec3(normal);
+		a = -a;
 	}
 
-	//if (a <= 0) {
-	if (dot_vec3s(normal, tmpvec3) <= 0) {
+	if (a <= 0) {
 		return 0;
 	}
 
 	return 1;
 }
 
+// TODO make a config macro that turns this into an inline function/macro that
+// only supports float for a small perf boost
+static vec4 get_v_attrib(glVertex_Attrib* v, GLsizei i)
+{
+	// v->buf will be 0 for a client array and buf[0].data
+	// is always NULL so this works for both but we have to cast
+	// the pointer to GLsizeiptr because adding an offset to a NULL pointer
+	// is undefined.  So, do the math as numbers and convert back to a pointer
+	GLsizeiptr buf_data = (GLsizeiptr)c->buffers.a[v->buf].data;
+	u8* u8p = (u8*)(buf_data + v->offset + v->stride*i);
+
+	i8* i8p = (i8*)u8p;
+	u16* u16p = (u16*)u8p;
+	i16* i16p = (i16*)u8p;
+	u32* u32p = (u32*)u8p;
+	i32* i32p = (i32*)u8p;
+
+	vec4 tmpvec4 = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float* tv = (float*)&tmpvec4;
+	GLenum type = v->type;
+
+	if (type < GL_FLOAT) {
+		for (int i=0; i<v->size; i++) {
+			if (v->normalized) {
+				switch (type) {
+				case GL_BYTE:           tv[i] = MAP(i8p[i], INT8_MIN, INT8_MAX, -1.0f, 1.0f); break;
+				case GL_UNSIGNED_BYTE:  tv[i] = MAP(u8p[i], 0, UINT8_MAX, 0.0f, 1.0f); break;
+				case GL_SHORT:          tv[i] = MAP(i16p[i], INT16_MIN,INT16_MAX, 0.0f, 1.0f); break;
+				case GL_UNSIGNED_SHORT: tv[i] = MAP(u16p[i], 0, UINT16_MAX, 0.0f, 1.0f); break;
+				case GL_INT:            tv[i] = MAP(i32p[i], (i64)INT32_MIN, (i64)INT32_MAX, 0.0f, 1.0f); break;
+				case GL_UNSIGNED_INT:   tv[i] = MAP(u32p[i], 0, UINT32_MAX, 0.0f, 1.0f); break;
+				}
+			} else {
+				switch (type) {
+				case GL_BYTE:           tv[i] = i8p[i]; break;
+				case GL_UNSIGNED_BYTE:  tv[i] = u8p[i]; break;
+				case GL_SHORT:          tv[i] = i16p[i]; break;
+				case GL_UNSIGNED_SHORT: tv[i] = u16p[i]; break;
+				case GL_INT:            tv[i] = i32p[i]; break;
+				case GL_UNSIGNED_INT:   tv[i] = u32p[i]; break;
+				}
+			}
+		}
+	} else {
+		// TODO support GL_DOUBLE
+
+		memcpy(tv, u8p, sizeof(float)*v->size);
+	}
+
+	//c->cur_vertex_array->vertex_attribs[enabled[j]].buf->data;
+	return tmpvec4;
+}
 
 static void do_vertex(glVertex_Attrib* v, int* enabled, unsigned int num_enabled, unsigned int i, unsigned int vert)
 {
-	GLuint buf;
-	u8* buf_pos;
-	vec4 tmpvec4;
-
 	// copy/prep vertex attributes from buffers into appropriate positions for vertex shader to access
 	for (int j=0; j<num_enabled; ++j) {
-		buf = v[enabled[j]].buf;
-
-		buf_pos = (u8*)c->buffers.a[buf].data + v[enabled[j]].offset + v[enabled[j]].stride*i;
-
-		SET_VEC4(tmpvec4, 0.0f, 0.0f, 0.0f, 1.0f);
-		memcpy(&tmpvec4, buf_pos, sizeof(float)*v[enabled[j]].size);
-
-		c->vertex_attribs_vs[enabled[j]] = tmpvec4;
+		c->vertex_attribs_vs[enabled[j]] = get_v_attrib(&v[enabled[j]], i);
 	}
 
 	float* vs_out = &c->vs_output.output_buf.a[vert*c->vs_output.size];
@@ -101,65 +144,82 @@ static void do_vertex(glVertex_Attrib* v, int* enabled, unsigned int num_enabled
 
 	c->glverts.a[vert].vs_out = vs_out;
 	c->glverts.a[vert].clip_space = c->builtins.gl_Position;
-	c->glverts.a[vert].edge_flag = 1;
+
+	// no use setting here because of TRIANGLE_STRIP
+	// and TRIANGLE_FAN. While I don't properly
+	// generate "primitives", I do expand create unique vertices
+	// to process when the user uses an element (index) buffer.
+	//
+	// so it's done in draw_triangle()
+	//c->glverts.a[vert].edge_flag = 1;
 
 	c->glverts.a[vert].clip_code = gl_clipcode(c->builtins.gl_Position);
 }
 
-
-static void vertex_stage(GLuint first, GLsizei count, GLsizei instance_id, GLuint base_instance, GLboolean use_elements)
+// TODO naming issue/refactor?
+// When used with Draw*Arrays* indices is really the index of the first vertex to be used
+// When used for Draw*Elements* indices is either a byte offset of the first index or
+// an actual pointer to the array of indices depending on whether an ELEMENT_ARRAY_BUFFER is bound
+//
+// use_elems_type is either 0/false or one of GL_UNSIGNED_BYTE/SHORT/INT
+// so used as a boolean and an enum
+static void vertex_stage(const GLvoid* indices, GLsizei count, GLsizei instance_id, GLuint base_instance, GLenum use_elems_type)
 {
 	unsigned int i, j, vert, num_enabled;
-	u8* buf_pos;
 
-	//save checking if enabled on every loop if we build this first
-	//also initialize the vertex_attrib space
-	float vec4_init[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	int enabled[GL_MAX_VERTEX_ATTRIBS] = { 0 };
 	glVertex_Attrib* v = c->vertex_arrays.a[c->cur_vertex_array].vertex_attribs;
 	GLuint elem_buffer = c->vertex_arrays.a[c->cur_vertex_array].element_buffer;
 
+	//save checking if enabled on every loop if we build this first
+	//also initialize the vertex_attrib space
+	// TODO does creating enabled array actually help perf?  At what number
+	// of GL_MAX_VERTEX_ATTRIBS and vertices does it become a benefit?
+	int enabled[GL_MAX_VERTEX_ATTRIBS] = { 0 };
 	for (i=0, j=0; i<GL_MAX_VERTEX_ATTRIBS; ++i) {
 		if (v[i].enabled) {
 			if (v[i].divisor == 0) {
-				// no need to set to defalt vector here because it's handled in do_vertex()
 				enabled[j++] = i;
-			} else if (!(instance_id % v[i].divisor)) {   //set instanced attributes if necessary
-				// only reset to default vector right before updating, because
-				// it has to stay the same across multiple instances for divisors > 1
-				memcpy(&c->vertex_attribs_vs[i], vec4_init, sizeof(vec4));
-
+			} else if (!(instance_id % v[i].divisor)) {
+				//set instanced attributes if necessary
 				int n = instance_id/v[i].divisor + base_instance;
-				buf_pos = (u8*)c->buffers.a[v[i].buf].data + v[i].offset + v[i].stride*n;
-
-				memcpy(&c->vertex_attribs_vs[i], buf_pos, sizeof(float)*v[i].size);
+				c->vertex_attribs_vs[i] = get_v_attrib(&v[i], n);
 			}
 		}
 	}
 	num_enabled = j;
 
 	cvec_reserve_glVertex(&c->glverts, count);
-	c->builtins.gl_InstanceID = instance_id;
 
-	if (!use_elements) {
+	// gl_InstanceID always starts at 0, base_instance is only added when grabbing attributes
+	// https://www.khronos.org/opengl/wiki/Built-in_Variable_(GLSL)#Vertex_shader_inputs
+	c->builtins.gl_InstanceID = instance_id;
+	c->builtins.gl_BaseInstance = base_instance;
+	GLsizeiptr first = (GLsizeiptr)indices;
+
+	if (!use_elems_type) {
 		for (vert=0, i=first; i<first+count; ++i, ++vert) {
 			do_vertex(v, enabled, num_enabled, i, vert);
 		}
 	} else {
-		GLuint* uint_array = (GLuint*) c->buffers.a[elem_buffer].data;
-		GLushort* ushort_array = (GLushort*) c->buffers.a[elem_buffer].data;
-		GLubyte* ubyte_array = (GLubyte*) c->buffers.a[elem_buffer].data;
-		if (c->buffers.a[elem_buffer].type == GL_UNSIGNED_BYTE) {
-			for (vert=0, i=first; i<first+count; ++i, ++vert) {
-				do_vertex(v, enabled, num_enabled, ubyte_array[i], vert);
+		GLuint* uint_array = (GLuint*)indices;
+		GLushort* ushort_array = (GLushort*)indices;
+		GLubyte* ubyte_array = (GLubyte*)indices;
+		if (c->bound_buffers[GL_ELEMENT_ARRAY_BUFFER-GL_ARRAY_BUFFER]) {
+			uint_array = (GLuint*)(c->buffers.a[elem_buffer].data + first);
+			ushort_array = (GLushort*)(c->buffers.a[elem_buffer].data + first);
+			ubyte_array = (GLubyte*)(c->buffers.a[elem_buffer].data + first);
+		}
+		if (use_elems_type == GL_UNSIGNED_BYTE) {
+			for (i=0; i<count; ++i) {
+				do_vertex(v, enabled, num_enabled, ubyte_array[i], i);
 			}
-		} else if (c->buffers.a[elem_buffer].type == GL_UNSIGNED_SHORT) {
-			for (vert=0, i=first; i<first+count; ++i, ++vert) {
-				do_vertex(v, enabled, num_enabled, ushort_array[i], vert);
+		} else if (use_elems_type == GL_UNSIGNED_SHORT) {
+			for (i=0; i<count; ++i) {
+				do_vertex(v, enabled, num_enabled, ushort_array[i], i);
 			}
 		} else {
-			for (vert=0, i=first; i<first+count; ++i, ++vert) {
-				do_vertex(v, enabled, num_enabled, uint_array[i], vert);
+			for (i=0; i<count; ++i) {
+				do_vertex(v, enabled, num_enabled, uint_array[i], i);
 			}
 		}
 	}
@@ -167,17 +227,24 @@ static void vertex_stage(GLuint first, GLsizei count, GLsizei instance_id, GLuin
 
 
 //TODO make fs_input static?  or a member of glContext?
-static void draw_point(glVertex* vert)
+static void draw_point(glVertex* vert, float poly_offset)
 {
 	float fs_input[GL_MAX_VERTEX_OUTPUT_COMPONENTS];
 
 	vec3 point = vec4_to_vec3h(vert->screen_space);
+	point.z += poly_offset; // couldn't this put it outside of [-1,1]?
 	point.z = MAP(point.z, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
 
-	//TODO not sure if I'm supposed to do this ... doesn't say to in spec but it is called depth clamping
-	//but I don't do it for lines or triangles (at least in fill or line mode)
-	if (c->depth_clamp)
-		point.z = clampf_01(point.z);
+	// TODO necessary for non-perspective?
+	//if (c->depth_clamp)
+	//	clampf(point.z, c->depth_range_near, c->depth_range_far);
+
+	Shader_Builtins builtins;
+	// spec pg 110 r,q are supposed to be replaced with 0 and 1...but PointCoord is a vec2
+	// not worth making it a vec4 for something unlikely to be used
+	//builtins.gl_PointCoord.z = 0;
+	//builtins.gl_PointCoord.w = 1;
+	int fragdepth_or_discard = c->programs.a[c->cur_program].fragdepth_or_discard;
 
 	//TODO why not just pass vs_output directly?  hmmm...
 	memcpy(fs_input, vert->vs_out, c->vs_output.size*sizeof(float));
@@ -187,66 +254,76 @@ static void draw_point(glVertex* vert)
 	float y = point.y + 0.5f;
 	float p_size = c->point_size;
 	float origin = (c->point_spr_origin == GL_UPPER_LEFT) ? -1.0f : 1.0f;
+	// NOTE/TODO, According to the spec if the clip coordinate, ie the
+	// center of the point is outside the clip volume, you're supposed to
+	// clip the whole thing, but some vendors don't do that because it's
+	// not what most people want.
 
-	// Can easily clip whole point when point size <= 1 ...
-	if (p_size <= 1) {
-		if (x < 0 || y < 0 || x >= c->back_buffer.w || y >= c->back_buffer.h)
+	// Can easily clip whole point when point size <= 1
+	if (p_size <= 1.0f) {
+		if (x < c->lx || y < c->ly || x >= c->ux || y >= c->uy)
 			return;
 	}
 
 	for (float i = y-p_size/2; i<y+p_size/2; ++i) {
-		if (i < 0 || i >= c->back_buffer.h)
+		if (i < c->ly || i >= c->uy)
 			continue;
 
 		for (float j = x-p_size/2; j<x+p_size/2; ++j) {
 
-			if (j < 0 || j >= c->back_buffer.w)
+			if (j < c->lx || j >= c->ux)
 				continue;
-			
-			// per page 110 of 3.3 spec
-			c->builtins.gl_PointCoord.x = 0.5f + ((int)j + 0.5f - point.x)/p_size;
-			c->builtins.gl_PointCoord.y = 0.5f + origin * ((int)i + 0.5f - point.y)/p_size;
 
-			SET_VEC4(c->builtins.gl_FragCoord, j, i, point.z, 1/vert->screen_space.w);
-			c->builtins.discard = GL_FALSE;
-			c->builtins.gl_FragDepth = point.z;
-			c->programs.a[c->cur_program].fragment_shader(fs_input, &c->builtins, c->programs.a[c->cur_program].uniform);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, j, i, c->builtins.gl_FragDepth);
+			if (!fragdepth_or_discard && !fragment_processing(j, i, point.z)) {
+				continue;
+			}
+
+			// per page 110 of 3.3 spec (x,y are s,t)
+			builtins.gl_PointCoord.x = 0.5f + ((int)j + 0.5f - point.x)/p_size;
+			builtins.gl_PointCoord.y = 0.5f + origin * ((int)i + 0.5f - point.y)/p_size;
+
+			SET_VEC4(builtins.gl_FragCoord, j, i, point.z, 1/vert->screen_space.w);
+			builtins.discard = GL_FALSE;
+			builtins.gl_FragDepth = point.z;
+			c->programs.a[c->cur_program].fragment_shader(fs_input, &builtins, c->programs.a[c->cur_program].uniform);
+			if (!builtins.discard)
+				draw_pixel(builtins.gl_FragColor, j, i, builtins.gl_FragDepth, fragdepth_or_discard);
 		}
 	}
 }
 
-static void run_pipeline(GLenum mode, GLuint first, GLsizei count, GLsizei instance, GLuint base_instance, GLboolean use_elements)
+static void run_pipeline(GLenum mode, const GLvoid* indices, GLsizei count, GLsizei instance, GLuint base_instance, GLboolean use_elements)
 {
-	unsigned int i, vert;
+	GLsizei i;
 	int provoke;
 
-	assert(count <= MAX_VERTICES);
+	PGL_ASSERT(count <= MAX_VERTICES);
 
-	vertex_stage(first, count, instance, base_instance, use_elements);
+	vertex_stage(indices, count, instance, base_instance, use_elements);
 
 	//fragment portion
 	if (mode == GL_POINTS) {
-		for (vert=0, i=first; i<first+count; ++i, ++vert) {
-			if (c->glverts.a[vert].clip_code)
+		for (i=0; i<count; ++i) {
+			// clip only z and let partial points (size > 1)
+			// show even if the center would have been clipped
+			if (c->glverts.a[i].clip_code & CLIPZ_MASK)
 				continue;
 
-			c->glverts.a[vert].screen_space = mult_mat4_vec4(c->vp_mat, c->glverts.a[vert].clip_space);
+			c->glverts.a[i].screen_space = mult_mat4_vec4(c->vp_mat, c->glverts.a[i].clip_space);
 
-			draw_point(&c->glverts.a[vert]);
+			draw_point(&c->glverts.a[i], 0.0f);
 		}
 	} else if (mode == GL_LINES) {
-		for (vert=0, i=first; i<first+count-1; i+=2, vert+=2) {
-			draw_line_clip(&c->glverts.a[vert], &c->glverts.a[vert+1]);
+		for (i=0; i<count-1; i+=2) {
+			draw_line_clip(&c->glverts.a[i], &c->glverts.a[i+1]);
 		}
 	} else if (mode == GL_LINE_STRIP) {
-		for (vert=0, i=first; i<first+count-1; i++, vert++) {
-			draw_line_clip(&c->glverts.a[vert], &c->glverts.a[vert+1]);
+		for (i=0; i<count-1; i++) {
+			draw_line_clip(&c->glverts.a[i], &c->glverts.a[i+1]);
 		}
 	} else if (mode == GL_LINE_LOOP) {
-		for (vert=0, i=first; i<first+count-1; i++, vert++) {
-			draw_line_clip(&c->glverts.a[vert], &c->glverts.a[vert+1]);
+		for (i=0; i<count-1; i++) {
+			draw_line_clip(&c->glverts.a[i], &c->glverts.a[i+1]);
 		}
 		//draw ending line from last to first point
 		draw_line_clip(&c->glverts.a[count-1], &c->glverts.a[0]);
@@ -254,29 +331,29 @@ static void run_pipeline(GLenum mode, GLuint first, GLsizei count, GLsizei insta
 	} else if (mode == GL_TRIANGLES) {
 		provoke = (c->provoking_vert == GL_LAST_VERTEX_CONVENTION) ? 2 : 0;
 
-		for (vert=0, i=first; i<first+count-2; i+=3, vert+=3) {
-			draw_triangle(&c->glverts.a[vert], &c->glverts.a[vert+1], &c->glverts.a[vert+2], vert+provoke);
+		for (i=0; i<count-2; i+=3) {
+			draw_triangle(&c->glverts.a[i], &c->glverts.a[i+1], &c->glverts.a[i+2], i+provoke);
 		}
 
 	} else if (mode == GL_TRIANGLE_STRIP) {
 		unsigned int a=0, b=1, toggle = 0;
 		provoke = (c->provoking_vert == GL_LAST_VERTEX_CONVENTION) ? 0 : -2;
 
-		for (vert=2; vert<count; ++vert) {
-			draw_triangle(&c->glverts.a[a], &c->glverts.a[b], &c->glverts.a[vert], vert+provoke);
+		for (i=2; i<count; ++i) {
+			draw_triangle(&c->glverts.a[a], &c->glverts.a[b], &c->glverts.a[i], i+provoke);
 
 			if (!toggle)
-				a = vert;
+				a = i;
 			else
-				b = vert;
+				b = i;
 
 			toggle = !toggle;
 		}
 	} else if (mode == GL_TRIANGLE_FAN) {
 		provoke = (c->provoking_vert == GL_LAST_VERTEX_CONVENTION) ? 0 : -1;
 
-		for (vert=2; vert<count; ++vert) {
-			draw_triangle(&c->glverts.a[0], &c->glverts.a[vert-1], &c->glverts.a[vert], vert+provoke);
+		for (i=2; i<count; ++i) {
+			draw_triangle(&c->glverts.a[0], &c->glverts.a[i-1], &c->glverts.a[i], i+provoke);
 		}
 	}
 }
@@ -314,10 +391,10 @@ static void setup_fs_input(float t, float* v1_out, float* v2_out, float wa, floa
 	float inv_wb = 1.0/wb;
 
 	for (int i=0; i<c->vs_output.size; ++i) {
-		if (c->vs_output.interpolation[i] == SMOOTH) {
+		if (c->vs_output.interpolation[i] == PGL_SMOOTH) {
 			c->fs_input[i] = (v1_out[i]*inv_wa + t*(v2_out[i]*inv_wb - v1_out[i]*inv_wa)) / (inv_wa + t*(inv_wb - inv_wa));
 
-		} else if (c->vs_output.interpolation[i] == NOPERSPECTIVE) {
+		} else if (c->vs_output.interpolation[i] == PGL_NOPERSPECTIVE) {
 			c->fs_input[i] = v1_out[i] + t*(v2_out[i] - v1_out[i]);
 		} else {
 			c->fs_input[i] = vs_output[provoke*c->vs_output.size + i];
@@ -393,7 +470,7 @@ static void draw_line_clip(glVertex* v1, glVertex* v2)
 		t2 = mult_mat4_vec4(c->vp_mat, p2);
 
 		if (c->line_width < 1.5f)
-			draw_line_shader(t1, t2, v1->vs_out, v2->vs_out, provoke);
+			draw_line_shader(vec4_to_vec3h(t1), vec4_to_vec3h(t2), t1.w, t2.w, v1->vs_out, v2->vs_out, provoke, 0.0f);
 		else
 			draw_thick_line_shader(t1, t2, v1->vs_out, v2->vs_out, provoke);
 	} else {
@@ -422,7 +499,7 @@ static void draw_line_clip(glVertex* v1, glVertex* v2)
 			interpolate_clipped_line(v1, v2, v1_out, v2_out, tmin, tmax);
 
 			if (c->line_width < 1.5f)
-				draw_line_shader(t1, t2, v1->vs_out, v2->vs_out, provoke);
+				draw_line_shader(vec4_to_vec3h(t1), vec4_to_vec3h(t2), t1.w, t2.w, v1->vs_out, v2->vs_out, provoke, 0.0f);
 			else
 				draw_thick_line_shader(t1, t2, v1->vs_out, v2->vs_out, provoke);
 		}
@@ -430,19 +507,13 @@ static void draw_line_clip(glVertex* v1, glVertex* v2)
 }
 
 
-static void draw_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, unsigned int provoke)
+static void draw_line_shader(vec3 hp1, vec3 hp2, float w1, float w2, float* v1_out, float* v2_out, unsigned int provoke, float poly_offset)
 {
 	float tmp;
 	float* tmp_ptr;
 
-	vec3 hp1 = vec4_to_vec3h(v1);
-	vec3 hp2 = vec4_to_vec3h(v2);
-
 	//print_vec3(hp1, "\n");
 	//print_vec3(hp2, "\n");
-
-	float w1 = v1.w;
-	float w2 = v2.w;
 
 	float x1 = hp1.x, x2 = hp2.x, y1 = hp1.y, y2 = hp2.y;
 	float z1 = hp1.z, z2 = hp2.z;
@@ -502,9 +573,7 @@ static void draw_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, uns
 		y_max = i_y2;
 	}
 
-	//printf("%f %f %f %f   =\n", i_x1, i_y1, i_x2, i_y2);
-	//printf("%f %f %f %f   x_min etc\n", x_min, x_max, y_min, y_max);
-
+	// TODO should be done for each fragment, after poly_offset is added?
 	z1 = MAP(z1, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
 	z2 = MAP(z2, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
 
@@ -512,62 +581,76 @@ static void draw_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, uns
 	if (m <= -1) {     //(-infinite, -1]
 		//printf("slope <= -1\n");
 		for (x = x_min, y = y_max; y>=y_min && x<=x_max; --y) {
-			pr.x = x;
-			pr.y = y;
-			t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
+			if (CLIPXY_TEST(x, y)) {
+				pr.x = x;
+				pr.y = y;
+				t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
 
-			z = (1 - t) * z1 + t * z2;
-			w = (1 - t) * w1 + t * w2;
+				z = (1 - t) * z1 + t * z2;
+				z += poly_offset;
+				if (fragdepth_or_discard || fragment_processing(x, y, z)) {
+					w = (1 - t) * w1 + t * w2;
 
-			SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
-			c->builtins.discard = GL_FALSE;
-			c->builtins.gl_FragDepth = z;
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
+					c->builtins.discard = GL_FALSE;
+					c->builtins.gl_FragDepth = z;
+					setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
+					fragment_shader(c->fs_input, &c->builtins, uniform);
+					if (!c->builtins.discard)
+						draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, fragdepth_or_discard);
 
+				}
+			}
 			if (line_func(&line, x+0.5f, y-1) < 0) //A*(x+0.5f) + B*(y-1) + C < 0)
 				++x;
 		}
 	} else if (m <= 0) {     //(-1, 0]
 		//printf("slope = (-1, 0]\n");
 		for (x = x_min, y = y_max; x<=x_max && y>=y_min; ++x) {
-			pr.x = x;
-			pr.y = y;
-			t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
+			if (CLIPXY_TEST(x, y)) {
+				pr.x = x;
+				pr.y = y;
+				t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
 
-			z = (1 - t) * z1 + t * z2;
-			w = (1 - t) * w1 + t * w2;
+				z = (1 - t) * z1 + t * z2;
+				z += poly_offset;
+				if (fragdepth_or_discard || fragment_processing(x, y, z)) {
+					w = (1 - t) * w1 + t * w2;
 
-			SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
-			c->builtins.discard = GL_FALSE;
-			c->builtins.gl_FragDepth = z;
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
-
+					SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
+					c->builtins.discard = GL_FALSE;
+					c->builtins.gl_FragDepth = z;
+					setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
+					fragment_shader(c->fs_input, &c->builtins, uniform);
+					if (!c->builtins.discard)
+						draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, fragdepth_or_discard);
+				}
+			}
 			if (line_func(&line, x+1, y-0.5f) > 0) //A*(x+1) + B*(y-0.5f) + C > 0)
 				--y;
 		}
 	} else if (m <= 1) {     //(0, 1]
 		//printf("slope = (0, 1]\n");
 		for (x = x_min, y = y_min; x <= x_max && y <= y_max; ++x) {
-			pr.x = x;
-			pr.y = y;
-			t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
+			if (CLIPXY_TEST(x, y)) {
+				pr.x = x;
+				pr.y = y;
+				t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
 
-			z = (1 - t) * z1 + t * z2;
-			w = (1 - t) * w1 + t * w2;
+				z = (1 - t) * z1 + t * z2;
+				z += poly_offset;
+				if (fragdepth_or_discard || fragment_processing(x, y, z)) {
+					w = (1 - t) * w1 + t * w2;
 
-			SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
-			c->builtins.discard = GL_FALSE;
-			c->builtins.gl_FragDepth = z;
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
+					c->builtins.discard = GL_FALSE;
+					c->builtins.gl_FragDepth = z;
+					setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
+					fragment_shader(c->fs_input, &c->builtins, uniform);
+					if (!c->builtins.discard)
+						draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, fragdepth_or_discard);
+				}
+			}
 
 			if (line_func(&line, x+1, y+0.5f) < 0) //A*(x+1) + B*(y+0.5f) + C < 0)
 				++y;
@@ -576,20 +659,25 @@ static void draw_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, uns
 	} else {    //(1, +infinite)
 		//printf("slope > 1\n");
 		for (x = x_min, y = y_min; y<=y_max && x <= x_max; ++y) {
-			pr.x = x;
-			pr.y = y;
-			t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
+			if (CLIPXY_TEST(x, y)) {
+				pr.x = x;
+				pr.y = y;
+				t = dot_vec2s(sub_vec2s(pr, p1), sub_p2p1) / line_length_squared;
 
-			z = (1 - t) * z1 + t * z2;
-			w = (1 - t) * w1 + t * w2;
+				z = (1 - t) * z1 + t * z2;
+				z += poly_offset;
+				if (fragdepth_or_discard || fragment_processing(x, y, z)) {
+					w = (1 - t) * w1 + t * w2;
 
-			SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
-			c->builtins.discard = GL_FALSE;
-			c->builtins.gl_FragDepth = z;
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					SET_VEC4(c->builtins.gl_FragCoord, x, y, z, 1/w);
+					c->builtins.discard = GL_FALSE;
+					c->builtins.gl_FragDepth = z;
+					setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
+					fragment_shader(c->fs_input, &c->builtins, uniform);
+					if (!c->builtins.discard)
+						draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, fragdepth_or_discard);
+				}
+			}
 
 			if (line_func(&line, x+0.5f, y+1) > 0) //A*(x+0.5f) + B*(y+1) + C > 0)
 				++x;
@@ -604,7 +692,8 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 
 	frag_func fragment_shader = c->programs.a[c->cur_program].fragment_shader;
 	void* uniform = c->programs.a[c->cur_program].uniform;
-	int fragdepth_or_discard = c->programs.a[c->cur_program].fragdepth_or_discard;
+	// TODO use
+	//int fragdepth_or_discard = c->programs.a[c->cur_program].fragdepth_or_discard;
 
 	float i_x1, i_y1, i_x2, i_y2;
 	i_x1 = floor(x1) + 0.5;
@@ -630,7 +719,6 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 	float z = c->builtins.gl_FragCoord.z;
 
 	int first_is_diag = GL_FALSE;
-	int w = c->back_buffer.w, h = c->back_buffer.h;
 
 	//4 cases based on slope
 	if (m <= -1) {     //(-infinite, -1]
@@ -640,8 +728,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 			first_is_diag = GL_TRUE;
 		}
 		for (x = x_min, y = y_max; y>=y_min && x<=x_max; --y) {
-			// poor mans clipping, don't think it's worth real clipping
-			if (x >= 0 && x < w && y >= 0 && y < h) {
+			if (CLIPXY_TEST(x, y)) {
 				c->builtins.gl_FragCoord.x = x;
 				c->builtins.gl_FragCoord.y = y;
 				c->builtins.discard = GL_FALSE;
@@ -649,7 +736,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 				fragment_shader(c->fs_input, &c->builtins, uniform);
 
 				if (!c->builtins.discard)
-					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, GL_TRUE);
 			}
 
 			if (line_func(&line, x+0.5f, y-1) < 0) //A*(x+0.5f) + B*(y-1) + C < 0)
@@ -660,7 +747,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 			first_is_diag = GL_TRUE;
 		}
 		for (x = x_min, y = y_max; x<=x_max && y>=y_min; ++x) {
-			if (x >= 0 && x < w && y >= 0 && y < h) {
+			if (CLIPXY_TEST(x, y)) {
 				c->builtins.gl_FragCoord.x = x;
 				c->builtins.gl_FragCoord.y = y;
 				c->builtins.discard = GL_FALSE;
@@ -668,7 +755,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 				fragment_shader(c->fs_input, &c->builtins, uniform);
 
 				if (!c->builtins.discard)
-					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, GL_TRUE);
 			}
 
 			if (line_func(&line, x+1, y-0.5f) > 0) //A*(x+1) + B*(y-0.5f) + C > 0)
@@ -679,7 +766,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 			first_is_diag = GL_TRUE;
 		}
 		for (x = x_min, y = y_min; x <= x_max && y <= y_max; ++x) {
-			if (x >= 0 && x < w && y >= 0 && y < h) {
+			if (CLIPXY_TEST(x, y)) {
 				c->builtins.gl_FragCoord.x = x;
 				c->builtins.gl_FragCoord.y = y;
 				c->builtins.discard = GL_FALSE;
@@ -687,7 +774,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 				fragment_shader(c->fs_input, &c->builtins, uniform);
 
 				if (!c->builtins.discard)
-					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, GL_TRUE);
 			}
 			if (line_func(&line, x+1, y+0.5f) < 0) //A*(x+1) + B*(y+0.5f) + C < 0)
 				++y;
@@ -697,7 +784,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 			first_is_diag = GL_TRUE;
 		}
 		for (x = x_min, y = y_min; y<=y_max && x <= x_max; ++y) {
-			if (x >= 0 && x < w && y >= 0 && y < h) {
+			if (CLIPXY_TEST(x, y)) {
 				c->builtins.gl_FragCoord.x = x;
 				c->builtins.gl_FragCoord.y = y;
 				c->builtins.discard = GL_FALSE;
@@ -705,7 +792,7 @@ static int draw_perp_line(float m, float x1, float y1, float x2, float y2)
 				fragment_shader(c->fs_input, &c->builtins, uniform);
 
 				if (!c->builtins.discard)
-					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth);
+					draw_pixel(c->builtins.gl_FragColor, x, y, c->builtins.gl_FragDepth, GL_TRUE);
 			}
 			if (line_func(&line, x+0.5f, y+1) > 0) //A*(x+0.5f) + B*(y+1) + C > 0)
 				++x;
@@ -718,6 +805,7 @@ static void draw_thick_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_ou
 {
 	float tmp;
 	float* tmp_ptr;
+	// TODO add poly_offset to parameters and use
 
 	vec3 hp1 = vec4_to_vec3h(v1);
 	vec3 hp2 = vec4_to_vec3h(v2);
@@ -888,256 +976,25 @@ static void draw_thick_line_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_ou
 	}
 }
 
-// WARNING: this function is subject to serious change or removal and is currently unused (GL_LINE_SMOOTH unsupported)
-// TODO do it right, handle depth test correctly since we moved it into draw_pixel
-static void draw_line_smooth_shader(vec4 v1, vec4 v2, float* v1_out, float* v2_out, unsigned int provoke)
-{
-	float tmp;
-	float* tmp_ptr;
-
-	frag_func fragment_shader = c->programs.a[c->cur_program].fragment_shader;
-	void* uniform = c->programs.a[c->cur_program].uniform;
-	int fragdepth_or_discard = c->programs.a[c->cur_program].fragdepth_or_discard;
-
-	vec3 hp1 = vec4_to_vec3h(v1);
-	vec3 hp2 = vec4_to_vec3h(v2);
-	float x1 = hp1.x, x2 = hp2.x, y1 = hp1.y, y2 = hp2.y;
-	float z1 = hp1.z, z2 = hp2.z;
-
-	float w1 = v1.w;
-	float w2 = v2.w;
-
-	int x, j;
-
-	int steep = fabsf(y2 - y1) > fabsf(x2 - x1);
-
-	if (steep) {
-		tmp = x1;
-		x1 = y1;
-		y1 = tmp;
-		tmp = x2;
-		x2 = y2;
-		y2 = tmp;
-	}
-	if (x1 > x2) {
-		tmp = x1;
-		x1 = x2;
-		x2 = tmp;
-		tmp = y1;
-		y1 = y2;
-		y2 = tmp;
-
-		tmp = z1;
-		z1 = z2;
-		z2 = tmp;
-
-		tmp = w1;
-		w1 = w2;
-		w2 = tmp;
-
-		tmp_ptr = v1_out;
-		v1_out = v2_out;
-		v2_out = tmp_ptr;
-	}
-
-	float dx = x2 - x1;
-	float dy = y2 - y1;
-	float gradient = dy / dx;
-
-	float xend = x1 + 0.5f;
-	float yend = y1 + gradient * (xend - x1);
-
-	float xgap = 1.0 - modff(x1 + 0.5, &tmp);
-	float xpxl1 = xend;
-	float ypxl1;
-	modff(yend, &ypxl1);
-
-
-	//choose to compare against just one pixel for depth test instead of both
-	z1 = MAP(z1, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
-	if (steep) {
-		if (!c->depth_test || (!fragdepth_or_discard &&
-			depthtest(z1, ((float*)c->zbuf.lastrow)[-(int)xpxl1*c->zbuf.w + (int)ypxl1]))) {
-
-			if (!c->fragdepth_or_discard && c->depth_test) { //hate this double check but depth buf is only update if enabled
-				((float*)c->zbuf.lastrow)[-(int)xpxl1*c->zbuf.w + (int)ypxl1] = z1;
-				((float*)c->zbuf.lastrow)[-(int)xpxl1*c->zbuf.w + (int)(ypxl1+1)] = z1;
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, ypxl1, xpxl1, z1, 1/w1);
-			setup_fs_input(0, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = (1.0 - modff(yend, &tmp)) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, ypxl1, xpxl1, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, ypxl1+1, xpxl1, z1, 1/w1);
-			setup_fs_input(0, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(yend, &tmp) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, ypxl1+1, xpxl1, c->builtins.gl_FragDepth);
-		}
-	} else {
-		if (!c->depth_test || (!fragdepth_or_discard &&
-			depthtest(z1, ((float*)c->zbuf.lastrow)[-(int)ypxl1*c->zbuf.w + (int)xpxl1]))) {
-
-			if (!c->fragdepth_or_discard && c->depth_test) { //hate this double check but depth buf is only update if enabled
-				((float*)c->zbuf.lastrow)[-(int)ypxl1*c->zbuf.w + (int)xpxl1] = z1;
-				((float*)c->zbuf.lastrow)[-(int)(ypxl1+1)*c->zbuf.w + (int)xpxl1] = z1;
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, xpxl1, ypxl1, z1, 1/w1);
-			setup_fs_input(0, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = (1.0 - modff(yend, &tmp)) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, xpxl1, ypxl1, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, xpxl1, ypxl1+1, z1, 1/w1);
-			setup_fs_input(0, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(yend, &tmp) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, xpxl1, ypxl1+1, c->builtins.gl_FragDepth);
-		}
-	}
-
-
-	float intery = yend + gradient; //first y-intersection for main loop
-
-
-	xend = x2 + 0.5f;
-	yend = y2 + gradient * (xend - x2);
-
-	xgap = modff(x2 + 0.5, &tmp);
-	float xpxl2 = xend;
-	float ypxl2;
-	modff(yend, &ypxl2);
-
-	z2 = MAP(z2, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
-	if (steep) {
-		if (!c->depth_test || (!fragdepth_or_discard &&
-			depthtest(z2, ((float*)c->zbuf.lastrow)[-(int)xpxl2*c->zbuf.w + (int)ypxl2]))) {
-
-			if (!c->fragdepth_or_discard && c->depth_test) {
-				((float*)c->zbuf.lastrow)[-(int)xpxl2*c->zbuf.w + (int)ypxl2] = z2;
-				((float*)c->zbuf.lastrow)[-(int)xpxl2*c->zbuf.w + (int)(ypxl2+1)] = z2;
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, ypxl2, xpxl2, z2, 1/w2);
-			setup_fs_input(1, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = (1.0 - modff(yend, &tmp)) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, ypxl2, xpxl2, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, ypxl2+1, xpxl2, z2, 1/w2);
-			setup_fs_input(1, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(yend, &tmp) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, ypxl2+1, xpxl2, c->builtins.gl_FragDepth);
-		}
-
-	} else {
-		if (!c->depth_test || (!fragdepth_or_discard &&
-			depthtest(z2, ((float*)c->zbuf.lastrow)[-(int)ypxl2*c->zbuf.w + (int)xpxl2]))) {
-
-			if (!c->fragdepth_or_discard && c->depth_test) {
-				((float*)c->zbuf.lastrow)[-(int)ypxl2*c->zbuf.w + (int)xpxl2] = z2;
-				((float*)c->zbuf.lastrow)[-(int)(ypxl2+1)*c->zbuf.w + (int)xpxl2] = z2;
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, xpxl2, ypxl2, z2, 1/w2);
-			setup_fs_input(1, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = (1.0 - modff(yend, &tmp)) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, xpxl2, ypxl2, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, xpxl2, ypxl2+1, z2, 1/w2);
-			setup_fs_input(1, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(yend, &tmp) * xgap;
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, xpxl2, ypxl2+1, c->builtins.gl_FragDepth);
-		}
-	}
-
-	//use the fast, inaccurate calculation of t since this algorithm is already
-	//slower than the normal line drawing, pg 111 glspec if I ever want to fix it
-	float range = ceil(x2-x1);
-	float t, z, w;
-	for (j=1, x = xpxl1 + 1; x < xpxl2; ++x, ++j, intery += gradient) {
-		t = j/range;
-
-		z = (1 - t) * z1 + t * z2;
-		w = (1 - t) * w1 + t * w2;
-
-		if (steep) {
-			if (!c->fragdepth_or_discard && c->depth_test) {
-				if (!depthtest(z, ((float*)c->zbuf.lastrow)[-(int)x*c->zbuf.w + (int)intery])) {
-					continue;
-				} else {
-					((float*)c->zbuf.lastrow)[-(int)x*c->zbuf.w + (int)intery] = z;
-					((float*)c->zbuf.lastrow)[-(int)x*c->zbuf.w + (int)(intery+1)] = z;
-				}
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, intery, x, z, 1/w);
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = 1.0 - modff(intery, &tmp);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, intery, x, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, intery+1, x, z, 1/w);
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(intery, &tmp);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, intery+1, x, c->builtins.gl_FragDepth);
-
-		} else {
-			if (!c->fragdepth_or_discard && c->depth_test) {
-				if (!depthtest(z, ((float*)c->zbuf.lastrow)[-(int)intery*c->zbuf.w + (int)x])) {
-					continue;
-				} else {
-					((float*)c->zbuf.lastrow)[-(int)intery*c->zbuf.w + (int)x] = z;
-					((float*)c->zbuf.lastrow)[-(int)(intery+1)*c->zbuf.w + (int)x] = z;
-				}
-			}
-
-			SET_VEC4(c->builtins.gl_FragCoord, x, intery, z, 1/w);
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = 1.0 - modff(intery, &tmp);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, intery, c->builtins.gl_FragDepth);
-
-			SET_VEC4(c->builtins.gl_FragCoord, x, intery+1, z, 1/w);
-			setup_fs_input(t, v1_out, v2_out, w1, w2, provoke);
-			fragment_shader(c->fs_input, &c->builtins, uniform);
-			//fragcolor.w = modff(intery, &tmp);
-			if (!c->builtins.discard)
-				draw_pixel(c->builtins.gl_FragColor, x, intery+1, c->builtins.gl_FragDepth);
-
-		}
-	}
-}
-
-
 static void draw_triangle(glVertex* v0, glVertex* v1, glVertex* v2, unsigned int provoke)
 {
 	int c_or, c_and;
-
 	c_and = v0->clip_code & v1->clip_code & v2->clip_code;
 	if (c_and != 0) {
 		//printf("triangle outside\n");
 		return;
 	}
 
+	// have to set here because we can re use vertices
+	// for multiple triangles in STRIP and FAN
+	v0->edge_flag = v1->edge_flag = v2->edge_flag = 1;
+
+	// TODO figure out how to remove XY clipping while still
+	// handling weird edge cases like LearnPortableGL's skybox
+	// case
+	//v0->clip_code &= CLIPZ_MASK;
+	//v1->clip_code &= CLIPZ_MASK;
+	//v2->clip_code &= CLIPZ_MASK;
 	c_or = v0->clip_code | v1->clip_code | v2->clip_code;
 	if (c_or == 0) {
 		draw_triangle_final(v0, v1, v2, provoke);
@@ -1158,7 +1015,7 @@ static void draw_triangle_final(glVertex* v0, glVertex* v1, glVertex* v2, unsign
 		if (c->cull_mode == GL_FRONT_AND_BACK)
 			return;
 		if (c->cull_mode == GL_BACK && !front_facing) {
-			//printf("culling back face\n");
+			//puts("culling back face");
 			return;
 		}
 		if (c->cull_mode == GL_FRONT && front_facing)
@@ -1221,20 +1078,18 @@ static float (*clip_proc[6])(vec4 *, vec4 *, vec4 *) = {
 static inline void update_clip_pt(glVertex *q, glVertex *v0, glVertex *v1, float t)
 {
 	for (int i=0; i<c->vs_output.size; ++i) {
-		//why is this correct for both SMOOTH and NOPERSPECTIVE?
+		// this is correct for both smooth and noperspective because
+		// it's in clip space, pre-perspective divide
+		//
+		// https://www.khronos.org/opengl/wiki/Vertex_Post-Processing#Clipping
 		q->vs_out[i] = v0->vs_out[i] + (v1->vs_out[i] - v0->vs_out[i]) * t;
 
-		//FLAT should be handled indirectly by the provoke index
+		//PGL_FLAT should be handled indirectly by the provoke index
 		//nothing to do here unless I change that
 	}
 	
 	q->clip_code = gl_clipcode(q->clip_space);
-	/*
-	 * this is done in draw_triangle currently ...
-	q->screen_space = mult_mat4_vec4(c->vp_mat, q->clip_space);
-	if (q->clip_code == 0)
-		q->screen_space = mult_mat4_vec4(c->vp_mat, q->clip_space);
-		*/
+	//q->clip_code = gl_clipcode(q->clip_space) & CLIPZ_MASK;
 }
 
 
@@ -1277,6 +1132,7 @@ static void draw_triangle_clip(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 		}
 
 		/* find the next direction to clip */
+		// TODO only clip z planes or only near
 		while (clip_bit < 6 && (c_or & (1 << clip_bit)) == 0)  {
 			++clip_bit;
 		}
@@ -1313,8 +1169,8 @@ static void draw_triangle_clip(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 			q[2]->edge_flag = 0;
 			draw_triangle_clip(&tmp1, q[1], q[2], provoke, clip_bit+1);
 
-			tmp2.edge_flag = 1;
-			tmp1.edge_flag = 0;
+			tmp2.edge_flag = 0;
+			tmp1.edge_flag = 0; // fixed from TinyGL, was 1
 			q[2]->edge_flag = edge_flag_tmp;
 			draw_triangle_clip(&tmp2, &tmp1, q[2], provoke, clip_bit+1);
 		} else {
@@ -1330,7 +1186,7 @@ static void draw_triangle_clip(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 			tt = clip_proc[clip_bit](&tmp2.clip_space, &q[0]->clip_space, &q[2]->clip_space);
 			update_clip_pt(&tmp2, q[0], q[2], tt);
 
-			tmp1.edge_flag = 1;
+			tmp1.edge_flag = 0; // fixed from TinyGL, was 1
 			tmp2.edge_flag = q[2]->edge_flag;
 			draw_triangle_clip(q[0], &tmp1, &tmp2, provoke, clip_bit+1);
 		}
@@ -1339,48 +1195,86 @@ static void draw_triangle_clip(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 
 static void draw_triangle_point(glVertex* v0, glVertex* v1,  glVertex* v2, unsigned int provoke)
 {
-	//TODO provoke?
-	float fs_input[GL_MAX_VERTEX_OUTPUT_COMPONENTS];
-	vec3 point;
+	//TODO use provoke?
 	glVertex* vert[3] = { v0, v1, v2 };
+	vec3 hp[3];
+	hp[0] = vec4_to_vec3h(v0->screen_space);
+	hp[1] = vec4_to_vec3h(v1->screen_space);
+	hp[2] = vec4_to_vec3h(v2->screen_space);
 
+	float poly_offset = 0;
+	if (c->poly_offset_pt) {
+		poly_offset = calc_poly_offset(hp[0], hp[1], hp[2]);
+	}
+
+	// TODO TinyGL uses edge_flags to determine whether to draw
+	// a point here...but it doesn't work and there's no way
+	// to make it work as far as I can tell.  There are hacks
+	// I can do to get proper behavior but for now...meh
 	for (int i=0; i<3; ++i) {
-		if (!vert[i]->edge_flag) //TODO doesn't work
-			continue;
-
-		point = vec4_to_vec3h(vert[i]->screen_space);
-		point.z = MAP(point.z, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far);
-
-		//TODO not sure if I'm supposed to do this ... doesn't say to in spec but it is called depth clamping
-		if (c->depth_clamp)
-			point.z = clampf_01(point.z);
-
-		for (int j=0; j<c->vs_output.size; ++j) {
-			if (c->vs_output.interpolation[j] != FLAT) {
-				fs_input[j] = vert[i]->vs_out[j]; //would be correct from clipping
-			} else {
-				fs_input[j] = c->vs_output.output_buf.a[provoke*c->vs_output.size + j];
-			}
-		}
-
-		c->builtins.discard = GL_FALSE;
-		c->builtins.gl_FragDepth = point.z;
-		c->programs.a[c->cur_program].fragment_shader(fs_input, &c->builtins, c->programs.a[c->cur_program].uniform);
-		if (!c->builtins.discard)
-			draw_pixel(c->builtins.gl_FragColor, point.x, point.y, c->builtins.gl_FragDepth);
+		draw_point(vert[i], poly_offset);
 	}
 }
 
 static void draw_triangle_line(glVertex* v0, glVertex* v1,  glVertex* v2, unsigned int provoke)
 {
-	if (v0->edge_flag)
-		draw_line_shader(v0->screen_space, v1->screen_space, v0->vs_out, v1->vs_out, provoke);
-	if (v1->edge_flag)
-		draw_line_shader(v1->screen_space, v2->screen_space, v1->vs_out, v2->vs_out, provoke);
-	if (v2->edge_flag)
-		draw_line_shader(v2->screen_space, v0->screen_space, v2->vs_out, v0->vs_out, provoke);
+	// TODO early return if no edge_flags
+	vec4 s0 = v0->screen_space;
+	vec4 s1 = v1->screen_space;
+	vec4 s2 = v2->screen_space;
+
+	// TODO remove redundant calc in thick_line_shader
+	vec3 hp0 = vec4_to_vec3h(s0);
+	vec3 hp1 = vec4_to_vec3h(s1);
+	vec3 hp2 = vec4_to_vec3h(s2);
+	float w0 = v0->screen_space.w;
+	float w1 = v1->screen_space.w;
+	float w2 = v2->screen_space.w;
+
+	float poly_offset = 0;
+	if (c->poly_offset_line) {
+		poly_offset = calc_poly_offset(hp0, hp1, hp2);
+	}
+
+	if (c->line_width < 1.5f) {
+		if (v0->edge_flag)
+			draw_line_shader(hp0, hp1, w0, w1, v0->vs_out, v1->vs_out, provoke, poly_offset);
+		if (v1->edge_flag)
+			draw_line_shader(hp1, hp2, w1, w2, v1->vs_out, v2->vs_out, provoke, poly_offset);
+		if (v2->edge_flag)
+			draw_line_shader(hp2, hp0, w2, w0, v2->vs_out, v0->vs_out, provoke, poly_offset);
+	} else {
+		if (v0->edge_flag)
+			draw_thick_line_shader(s0, s1, v0->vs_out, v1->vs_out, provoke);
+		if (v1->edge_flag)
+			draw_thick_line_shader(s1, s2, v1->vs_out, v2->vs_out, provoke);
+		if (v2->edge_flag)
+			draw_thick_line_shader(s2, s0, v2->vs_out, v0->vs_out, provoke);
+	}
 }
 
+// TODO make macro or inline?
+static float calc_poly_offset(vec3 hp0, vec3 hp1, vec3 hp2)
+{
+	float max_depth_slope = 0;
+	float dzxy[6];
+	dzxy[0] = fabsf((hp1.z - hp0.z)/(hp1.x - hp0.x));
+	dzxy[1] = fabsf((hp1.z - hp0.z)/(hp1.y - hp0.y));
+	dzxy[2] = fabsf((hp2.z - hp1.z)/(hp2.x - hp1.x));
+	dzxy[3] = fabsf((hp2.z - hp1.z)/(hp2.y - hp1.y));
+	dzxy[4] = fabsf((hp0.z - hp2.z)/(hp0.x - hp2.x));
+	dzxy[5] = fabsf((hp0.z - hp2.z)/(hp0.y - hp2.y));
+
+	max_depth_slope = dzxy[0];
+	for (int i=1; i<6; ++i) {
+		if (dzxy[i] > max_depth_slope)
+			max_depth_slope = dzxy[i];
+	}
+
+#define SMALLEST_INCR 0.000001;
+	return max_depth_slope * c->poly_factor + c->poly_units * SMALLEST_INCR;
+#undef SMALLEST_INCR
+}
 
 static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigned int provoke)
 {
@@ -1393,26 +1287,10 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 	vec3 hp2 = vec4_to_vec3h(p2);
 
 	// TODO even worth calculating or just some constant?
-	float max_depth_slope = 0;
 	float poly_offset = 0;
 
-	if (c->poly_offset) {
-		float dzxy[6];
-		dzxy[0] = fabsf((hp1.z - hp0.z)/(hp1.x - hp0.x));
-		dzxy[1] = fabsf((hp1.z - hp0.z)/(hp1.y - hp0.y));
-		dzxy[2] = fabsf((hp2.z - hp1.z)/(hp2.x - hp1.x));
-		dzxy[3] = fabsf((hp2.z - hp1.z)/(hp2.y - hp1.y));
-		dzxy[4] = fabsf((hp0.z - hp2.z)/(hp0.x - hp2.x));
-		dzxy[5] = fabsf((hp0.z - hp2.z)/(hp0.y - hp2.y));
-
-		max_depth_slope = dzxy[0];
-		for (int i=1; i<6; ++i) {
-			if (dzxy[i] > max_depth_slope)
-				max_depth_slope = dzxy[i];
-		}
-
-#define SMALLEST_INCR 0.000001;
-		poly_offset = max_depth_slope * c->poly_factor + c->poly_units * SMALLEST_INCR;
+	if (c->poly_offset_fill) {
+		poly_offset = calc_poly_offset(hp0, hp1, hp2);
 	}
 
 	/*
@@ -1437,22 +1315,17 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 	y_min = MIN(hp2.y, y_min);
 	y_max = MAX(hp2.y, y_max);
 
+	// clipping/scissoring against side planes here
+	x_min = MAX(c->lx, x_min);
+	x_max = MIN(c->ux, x_max);
+	y_min = MAX(c->ly, y_min);
+	y_max = MIN(c->uy, y_max);
+	// end clipping
+
+	// TODO is there any point to having an int index?
+	// I think I did it for OpenMP
 	int ix_max = roundf(x_max);
 	int iy_max = roundf(y_max);
-
-
-	/*
-	 * testing without this
-	x_min = MAX(0, x_min);
-	x_max = MIN(c->back_buffer.w-1, x_max);
-	y_min = MAX(0, y_min);
-	y_max = MIN(c->back_buffer.h-1, y_max);
-
-	x_min = MAX(c->x_min, x_min);
-	x_max = MIN(c->x_max, x_max);
-	y_min = MAX(c->y_min, y_min);
-	y_max = MIN(c->y_max, y_max);
-	*/
 
 	//form implicit lines
 	Line l01 = make_Line(hp0.x, hp0.y, hp1.x, hp1.y);
@@ -1475,6 +1348,7 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 
 	float x, y;
 
+	int fragdepth_or_discard = c->programs.a[c->cur_program].fragdepth_or_discard;
 	Shader_Builtins builtins;
 
 	#pragma omp parallel for private(x, y, alpha, beta, gamma, z, tmp, tmp2, builtins, fs_input)
@@ -1503,20 +1377,23 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 
 					z = alpha * hp0.z + beta * hp1.z + gamma * hp2.z;
 
-					z = MAP(z, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far); //TODO move out (ie can I map hp1.z etc.)?
 					z += poly_offset;
+					z = MAP(z, -1.0f, 1.0f, c->depth_range_near, c->depth_range_far); //TODO move out (ie can I map hp1.z etc.)?
 
-					// TODO have a macro that turns on pre-fragment shader depthtest/scissor test?
+					// early testing if shader doesn't use fragdepth or discard
+					if (!fragdepth_or_discard && !fragment_processing(x, y, z)) {
+						continue;
+					}
 
 					for (int i=0; i<c->vs_output.size; ++i) {
-						if (c->vs_output.interpolation[i] == SMOOTH) {
+						if (c->vs_output.interpolation[i] == PGL_SMOOTH) {
 							tmp = alpha*perspective[i] + beta*perspective[GL_MAX_VERTEX_OUTPUT_COMPONENTS + i] + gamma*perspective[2*GL_MAX_VERTEX_OUTPUT_COMPONENTS + i];
 
 							fs_input[i] = tmp/tmp2;
 
-						} else if (c->vs_output.interpolation[i] == NOPERSPECTIVE) {
+						} else if (c->vs_output.interpolation[i] == PGL_NOPERSPECTIVE) {
 							fs_input[i] = alpha * v0->vs_out[i] + beta * v1->vs_out[i] + gamma * v2->vs_out[i];
-						} else { // == FLAT
+						} else { // == PGL_FLAT
 							fs_input[i] = vs_output[provoke*c->vs_output.size + i];
 						}
 					}
@@ -1533,7 +1410,7 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 					c->programs.a[c->cur_program].fragment_shader(fs_input, &builtins, c->programs.a[c->cur_program].uniform);
 					if (!builtins.discard) {
 
-						draw_pixel(builtins.gl_FragColor, x, y, builtins.gl_FragDepth);
+						draw_pixel(builtins.gl_FragColor, x, y, builtins.gl_FragDepth, fragdepth_or_discard);
 					}
 				}
 			}
@@ -1543,14 +1420,15 @@ static void draw_triangle_fill(glVertex* v0, glVertex* v1, glVertex* v2, unsigne
 
 
 // TODO should this be done in colors/integers not vec4/floats?
+// and if it's done in Colors/integers what's the performance difference?
 static Color blend_pixel(vec4 src, vec4 dst)
 {
-	vec4* cnst = &c->blend_color;
-	float i = MIN(src.w, 1-dst.w);
+	vec4 bc = c->blend_color;
+	float i = MIN(src.w, 1-dst.w); // in colors this would be min(src.a, 255-dst.a)/255
 
 	vec4 Cs, Cd;
 
-	switch (c->blend_sfactor) {
+	switch (c->blend_sRGB) {
 	case GL_ZERO:                     SET_VEC4(Cs, 0,0,0,0);                                 break;
 	case GL_ONE:                      SET_VEC4(Cs, 1,1,1,1);                                 break;
 	case GL_SRC_COLOR:                Cs = src;                                              break;
@@ -1561,10 +1439,10 @@ static Color blend_pixel(vec4 src, vec4 dst)
 	case GL_ONE_MINUS_SRC_ALPHA:      SET_VEC4(Cs, 1-src.w,1-src.w,1-src.w,1-src.w);         break;
 	case GL_DST_ALPHA:                SET_VEC4(Cs, dst.w, dst.w, dst.w, dst.w);              break;
 	case GL_ONE_MINUS_DST_ALPHA:      SET_VEC4(Cs, 1-dst.w,1-dst.w,1-dst.w,1-dst.w);         break;
-	case GL_CONSTANT_COLOR:           Cs = *cnst;                                            break;
-	case GL_ONE_MINUS_CONSTANT_COLOR: SET_VEC4(Cs, 1-cnst->x,1-cnst->y,1-cnst->z,1-cnst->w); break;
-	case GL_CONSTANT_ALPHA:           SET_VEC4(Cs, cnst->w, cnst->w, cnst->w, cnst->w);      break;
-	case GL_ONE_MINUS_CONSTANT_ALPHA: SET_VEC4(Cs, 1-cnst->w,1-cnst->w,1-cnst->w,1-cnst->w); break;
+	case GL_CONSTANT_COLOR:           Cs = bc;                                               break;
+	case GL_ONE_MINUS_CONSTANT_COLOR: SET_VEC4(Cs, 1-bc.x,1-bc.y,1-bc.z,1-bc.w);             break;
+	case GL_CONSTANT_ALPHA:           SET_VEC4(Cs, bc.w, bc.w, bc.w, bc.w);                  break;
+	case GL_ONE_MINUS_CONSTANT_ALPHA: SET_VEC4(Cs, 1-bc.w,1-bc.w,1-bc.w,1-bc.w);             break;
 
 	case GL_SRC_ALPHA_SATURATE:       SET_VEC4(Cs, i, i, i, 1);                              break;
 	/*not implemented yet
@@ -1577,11 +1455,11 @@ static Color blend_pixel(vec4 src, vec4 dst)
 	*/
 	default:
 		//should never get here
-		printf("error unrecognized blend_sfactor!\n");
+		puts("error unrecognized blend_sRGB!");
 		break;
 	}
 
-	switch (c->blend_dfactor) {
+	switch (c->blend_dRGB) {
 	case GL_ZERO:                     SET_VEC4(Cd, 0,0,0,0);                                 break;
 	case GL_ONE:                      SET_VEC4(Cd, 1,1,1,1);                                 break;
 	case GL_SRC_COLOR:                Cd = src;                                              break;
@@ -1592,10 +1470,10 @@ static Color blend_pixel(vec4 src, vec4 dst)
 	case GL_ONE_MINUS_SRC_ALPHA:      SET_VEC4(Cd, 1-src.w,1-src.w,1-src.w,1-src.w);         break;
 	case GL_DST_ALPHA:                SET_VEC4(Cd, dst.w, dst.w, dst.w, dst.w);              break;
 	case GL_ONE_MINUS_DST_ALPHA:      SET_VEC4(Cd, 1-dst.w,1-dst.w,1-dst.w,1-dst.w);         break;
-	case GL_CONSTANT_COLOR:           Cd = *cnst;                                            break;
-	case GL_ONE_MINUS_CONSTANT_COLOR: SET_VEC4(Cd, 1-cnst->x,1-cnst->y,1-cnst->z,1-cnst->w); break;
-	case GL_CONSTANT_ALPHA:           SET_VEC4(Cd, cnst->w, cnst->w, cnst->w, cnst->w);      break;
-	case GL_ONE_MINUS_CONSTANT_ALPHA: SET_VEC4(Cd, 1-cnst->w,1-cnst->w,1-cnst->w,1-cnst->w); break;
+	case GL_CONSTANT_COLOR:           Cd = bc;                                               break;
+	case GL_ONE_MINUS_CONSTANT_COLOR: SET_VEC4(Cd, 1-bc.x,1-bc.y,1-bc.z,1-bc.w);             break;
+	case GL_CONSTANT_ALPHA:           SET_VEC4(Cd, bc.w, bc.w, bc.w, bc.w);                  break;
+	case GL_ONE_MINUS_CONSTANT_ALPHA: SET_VEC4(Cd, 1-bc.w,1-bc.w,1-bc.w,1-bc.w);             break;
 
 	case GL_SRC_ALPHA_SATURATE:       SET_VEC4(Cd, i, i, i, 1);                              break;
 	/*not implemented yet
@@ -1607,13 +1485,76 @@ static Color blend_pixel(vec4 src, vec4 dst)
 	*/
 	default:
 		//should never get here
-		printf("error unrecognized blend_dfactor!\n");
+		puts("error unrecognized blend_dRGB!");
+		break;
+	}
+
+	// TODO simplify combine redundancies
+	switch (c->blend_sA) {
+	case GL_ZERO:                     Cs.w = 0;              break;
+	case GL_ONE:                      Cs.w = 1;              break;
+	case GL_SRC_COLOR:                Cs.w = src.w;          break;
+	case GL_ONE_MINUS_SRC_COLOR:      Cs.w = 1-src.w;        break;
+	case GL_DST_COLOR:                Cs.w = dst.w;          break;
+	case GL_ONE_MINUS_DST_COLOR:      Cs.w = 1-dst.w;        break;
+	case GL_SRC_ALPHA:                Cs.w = src.w;          break;
+	case GL_ONE_MINUS_SRC_ALPHA:      Cs.w = 1-src.w;        break;
+	case GL_DST_ALPHA:                Cs.w = dst.w;          break;
+	case GL_ONE_MINUS_DST_ALPHA:      Cs.w = 1-dst.w;        break;
+	case GL_CONSTANT_COLOR:           Cs.w = bc.w;           break;
+	case GL_ONE_MINUS_CONSTANT_COLOR: Cs.w = 1-bc.w;         break;
+	case GL_CONSTANT_ALPHA:           Cs.w = bc.w;           break;
+	case GL_ONE_MINUS_CONSTANT_ALPHA: Cs.w = 1-bc.w;         break;
+
+	case GL_SRC_ALPHA_SATURATE:       Cs.w = 1;              break;
+	/*not implemented yet
+	 * won't be until I implement dual source blending/dual output from frag shader
+	 *https://www.opengl.org/wiki/Blending#Dual_Source_Blending
+	case GL_SRC1_COLOR:               Cs =  break;
+	case GL_ONE_MINUS_SRC1_COLOR:     Cs =  break;
+	case GL_SRC1_ALPHA:               Cs =  break;
+	case GL_ONE_MINUS_SRC1_ALPHA:     Cs =  break;
+	*/
+	default:
+		//should never get here
+		puts("error unrecognized blend_sA!");
+		break;
+	}
+
+	switch (c->blend_dA) {
+	case GL_ZERO:                     Cd.w = 0;              break;
+	case GL_ONE:                      Cd.w = 1;              break;
+	case GL_SRC_COLOR:                Cd.w = src.w;          break;
+	case GL_ONE_MINUS_SRC_COLOR:      Cd.w = 1-src.w;        break;
+	case GL_DST_COLOR:                Cd.w = dst.w;          break;
+	case GL_ONE_MINUS_DST_COLOR:      Cd.w = 1-dst.w;        break;
+	case GL_SRC_ALPHA:                Cd.w = src.w;          break;
+	case GL_ONE_MINUS_SRC_ALPHA:      Cd.w = 1-src.w;        break;
+	case GL_DST_ALPHA:                Cd.w = dst.w;          break;
+	case GL_ONE_MINUS_DST_ALPHA:      Cd.w = 1-dst.w;        break;
+	case GL_CONSTANT_COLOR:           Cd.w = bc.w;           break;
+	case GL_ONE_MINUS_CONSTANT_COLOR: Cd.w = 1-bc.w;         break;
+	case GL_CONSTANT_ALPHA:           Cd.w = bc.w;           break;
+	case GL_ONE_MINUS_CONSTANT_ALPHA: Cd.w = 1-bc.w;         break;
+
+	case GL_SRC_ALPHA_SATURATE:       Cd.w = 1;              break;
+	/*not implemented yet
+	case GL_SRC_ALPHA_SATURATE:       Cd =  break;
+	case GL_SRC1_COLOR:               Cd =  break;
+	case GL_ONE_MINUS_SRC1_COLOR:     Cd =  break;
+	case GL_SRC1_ALPHA:               Cd =  break;
+	case GL_ONE_MINUS_SRC1_ALPHA:     Cd =  break;
+	*/
+	default:
+		//should never get here
+		puts("error unrecognized blend_dA!");
 		break;
 	}
 
 	vec4 result;
 
-	switch (c->blend_equation) {
+	// TODO eliminate function calls to avoid alpha component calculations?
+	switch (c->blend_eqRGB) {
 	case GL_FUNC_ADD:
 		result = add_vec4s(mult_vec4s(Cs, src), mult_vec4s(Cd, dst));
 		break;
@@ -1631,7 +1572,29 @@ static Color blend_pixel(vec4 src, vec4 dst)
 		break;
 	default:
 		//should never get here
-		printf("error unrecognized blend_equation!\n");
+		puts("error unrecognized blend_eqRGB!");
+		break;
+	}
+
+	switch (c->blend_eqA) {
+	case GL_FUNC_ADD:
+		result.w = Cs.w*src.w + Cd.w*dst.w;
+		break;
+	case GL_FUNC_SUBTRACT:
+		result.w = Cs.w*src.w - Cd.w*dst.w;
+		break;
+	case GL_FUNC_REVERSE_SUBTRACT:
+		result.w = Cd.w*dst.w - Cs.w*src.w;
+		break;
+	case GL_MIN:
+		result.w = MIN(src.w, dst.w);
+		break;
+	case GL_MAX:
+		result.w = MAX(src.w, dst.w);
+		break;
+	default:
+		//should never get here
+		puts("error unrecognized blend_eqRGB!");
 		break;
 	}
 
@@ -1755,20 +1718,25 @@ for a 1 pixel size point there are only 3 edge cases where more than 1 pixel cen
 would fall on the very edge of a 1 pixel square.  I think just drawing the upper or upper
 corner pixel in these cases is fine and makes sense since width and height are actually 0.01 less
 than full, see make_viewport_matrix
-TODO point size > 1
 */
 
-	draw_pixel(cf, pos.x, pos.y, z);
+	draw_pixel(cf, pos.x, pos.y, z, GL_TRUE);
 }
 
-
-static void draw_pixel(vec4 cf, int x, int y, float z)
+static int fragment_processing(int x, int y, float z)
 {
+	// TODO only clip z planes, just factor in scissor values into
+	// min/maxing the boundaries of rasterization, maybe do it always
+	// even if scissoring is disabled? (could cause problems if
+	// they're turning it on and off with non-standard scissor bounds)
+	/*
+	// Now handled by "always-on" scissoring/guardband clipping earlier
 	if (c->scissor_test) {
 		if (x < c->scissor_lx || y < c->scissor_ly || x >= c->scissor_ux || y >= c->scissor_uy) {
-			return;
+			return 0;
 		}
 	}
+	*/
 
 	//MSAA
 	
@@ -1778,10 +1746,9 @@ static void draw_pixel(vec4 cf, int x, int y, float z)
 	if (c->stencil_test) {
 		if (!stencil_test(*stencil_dest)) {
 			stencil_op(0, 1, stencil_dest);
-			return;
+			return 0;
 		}
 	}
-	
 
 	//Depth test if necessary
 	if (c->depth_test) {
@@ -1796,13 +1763,22 @@ static void draw_pixel(vec4 cf, int x, int y, float z)
 			stencil_op(1, depth_result, stencil_dest);
 		}
 		if (!depth_result) {
-			return;
+			return 0;
 		}
 		if (c->depth_mask) {
 			((float*)c->zbuf.lastrow)[-y*c->zbuf.w + x] = src_depth;
 		}
 	} else if (c->stencil_test) {
 		stencil_op(1, 1, stencil_dest);
+	}
+	return 1;
+}
+
+
+static void draw_pixel(vec4 cf, int x, int y, float z, int do_frag_processing)
+{
+	if (do_frag_processing && !fragment_processing(x, y, z)) {
+		return;
 	}
 
 	//Blending
@@ -1820,7 +1796,7 @@ static void draw_pixel(vec4 cf, int x, int y, float z)
 		cf.w = clampf_01(cf.w);
 		src_color = vec4_to_Color(cf);
 	}
-	//this line neded the negation in the viewport matrix
+	//this line needed the negation in the viewport matrix
 	//((u32*)c->back_buffer.buf)[y*buf.w+x] = c.a << 24 | c.c << 16 | c.g << 8 | c.b;
 
 	//Logic Ops

@@ -1,4 +1,4 @@
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
 #include "portablegl.h"
 
@@ -41,7 +41,7 @@ void cleanup();
 void setup_context();
 int handle_events();
 
-void basic_transform_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void basic_transform_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void white_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 void uniform_color_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
@@ -57,7 +57,11 @@ int main(int argc, char** argv)
 
 	int sq_dim = 20;
 	vector<GLint> firsts;
-	vector<GLsizei> first_elems;
+
+	// needs to be the same size as a pointer so GLintptr or GLsizeiptr
+	// Possibly I could remove that restriction by changing glMultiDrawElements somehow
+	// but better to just match OpenGL for now
+	vector<GLintptr> first_elems;
 	vector<GLsizei> counts;
 
 	const int cols = 25;
@@ -66,7 +70,9 @@ int main(int argc, char** argv)
 	for (int j=0; j<rows; j++) {
 		for (int i=0; i<cols; i++) {
 			firsts.push_back(tri_strips.size());
-			first_elems.push_back(tri_strips.size());
+
+			// a byte offset into the element array buffer, which is using GLuints
+			first_elems.push_back(strip_elems.size()*sizeof(GLuint));
 			counts.push_back(4);
 
 			tri_strips.push_back(vec3(i*(sq_dim+5),        j*(sq_dim+5),        0));
@@ -130,7 +136,7 @@ int main(int argc, char** argv)
 		if (!use_elements) {
 			glMultiDrawArrays(GL_TRIANGLE_STRIP, &firsts[0], &counts[0], 100);
 		} else {
-			glMultiDrawElements(GL_TRIANGLE_STRIP, &counts[0], GL_UNSIGNED_INT, &first_elems[0], 475);
+			glMultiDrawElements(GL_TRIANGLE_STRIP, &counts[0], GL_UNSIGNED_INT, (GLvoid* const*)&first_elems[0], 475);
 		}
 
 		mat_stack.pop();
@@ -150,7 +156,7 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void basic_transform_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void basic_transform_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	My_Uniforms* u = (My_Uniforms*)uniforms;
 	*(vec4*)&builtins->gl_Position = u->mvp_mat * ((vec4*)vertex_attribs)[0];
@@ -191,7 +197,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

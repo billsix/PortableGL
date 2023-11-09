@@ -5,7 +5,8 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
+#define PORTABLEGL_IMPLEMENTATION
 
 #include "rsw_math.h"
 #include "gltools.h"
@@ -13,8 +14,7 @@
 #include "rsw_primitives.h"
 #include "controls.h"
 
-#define PORTABLEGL_IMPLEMENTATION
-#include "portablegl.h"
+//#include "portablegl.h"
 //#include "gl_unsafe.h"
 
 #include "stb_image.h"
@@ -60,17 +60,17 @@ bool handle_events();
 void cleanup();
 
 #define NUM_PROGRAMS 2
-void basic_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void basic_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void basic_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
-void interpolate_vs(float* vs_output, void* v_attribs, Shader_Builtins* builtins, void* uniforms);
+void interpolate_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void interpolate_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
-void texture_replace_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void texture_replace_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void texture_replace_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
 
-GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
-GLenum noperspective[4] = { NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE };
+GLenum smooth[4] = { PGL_SMOOTH4 };
+GLenum noperspective[4] = { PGL_NOPERSPECTIVE4 };
 //GLenum flat[GL_MAX_VERTEX_OUTPUT_COMPONENTS]; = {  };
 
 
@@ -86,8 +86,8 @@ typedef struct glShaderPair
 
 glShaderPair shader_pairs[NUM_PROGRAMS] =
 {
-	{ interpolate_vs, interpolate_fs, 3, { SMOOTH, SMOOTH, SMOOTH }, GL_FALSE },
-	{ texture_replace_vs, texture_replace_fs, 2, { SMOOTH, SMOOTH }, GL_FALSE }
+	{ interpolate_vs, interpolate_fs, 3, { PGL_SMOOTH3 }, GL_FALSE },
+	{ texture_replace_vs, texture_replace_fs, 2, { PGL_SMOOTH2 }, GL_FALSE }
 };
 
 
@@ -109,7 +109,7 @@ vector<vec3> box_verts;
 vector<ivec3> box_tris;
 vector<vec2> box_tex;
 
-GLenum interp_mode = SMOOTH;
+GLenum interp_mode = PGL_SMOOTH;
 
 
 GLuint cur_shader;
@@ -189,11 +189,11 @@ int main(int argc, char** argv)
 	fov = 40;
 	zmin = 1;
 	zmax = 50;
-	
+
 	const char* controls_file = NULL;
 	if (argc == 2)
 		controls_file = argv[1];
-	else 
+	else
 		controls_file = "./qwerty_controls.config";
 
 	parse_config_file(controls_file, control_keys, (int*)keyvalues, NCONTROLS);
@@ -486,10 +486,10 @@ int main(int argc, char** argv)
 		glDrawArrays(GL_LINES, 0, line_verts.size());
 
 
-		glinternal_Color red = { 255, 0, 0, 255 };
-		glinternal_Color green = { 0, 255, 0, 255 };
-		glinternal_Color blue = { 0, 0, 255, 255 };
-		glinternal_vec2 p1, p2, p3;
+		pgl_Color red = { 255, 0, 0, 255 };
+		pgl_Color green = { 0, 255, 0, 255 };
+		pgl_Color blue = { 0, 0, 255, 255 };
+		pgl_vec2 p1, p2, p3;
 		SET_VEC2(p1, 10, 10);
 		SET_VEC2(p2, 90, 150);
 		SET_VEC2(p3, 170, 10);
@@ -543,8 +543,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-
-	set_glContext(&the_Context);
 }
 
 void cleanup()
@@ -559,7 +557,7 @@ void cleanup()
 	SDL_Quit();
 }
 
-void basic_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void basic_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	*(vec4*)&builtins->gl_Position = *((mat4*)uniforms) * ((vec4*)vertex_attribs)[0];
 }
@@ -569,21 +567,21 @@ void basic_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 	*(vec4*)&builtins->gl_FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
 }
 
-void interpolate_vs(float* vs_output, void* v_attribs, Shader_Builtins* builtins, void* uniforms)
+void interpolate_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	vec4* vertex_attribs = (vec4*)v_attribs;
+	vec4* v_attrs = (vec4*)vertex_attribs;
 	vec4* gl_Position = (vec4*)&builtins->gl_Position;
 
-	((vec3*)vs_output)[0] = vertex_attribs[4].tovec3(); //color
+	((vec3*)vs_output)[0] = v_attrs[4].tovec3(); //color
 
-	//cout << vertex_attribs[0] << "\n";
+	//cout << v_attrs[0] << "\n";
 	//printf("%f %f %f\n", vs_output[0], vs_output[1], vs_output[2]);
 
 	//printf("instance = %d\n", builtins->gl_InstanceID);
-	//printf("%f %f %f\n", vertex_attribs[2].x, vertex_attribs[2].y, vertex_attribs[2].z);
-	//*(builtins->gl_Position) = *((mat4*)uniforms) * (vertex_attribs[0] + vertex_attribs[2]);
+	//printf("%f %f %f\n", v_attrs[2].x, v_attrs[2].y, v_attrs[2].z);
+	//*(builtins->gl_Position) = *((mat4*)uniforms) * (v_attrs[0] + v_attrs[2]);
 
-	*gl_Position = *((mat4*)uniforms) * (vertex_attribs[0] + vec4(vertex_attribs[3].xyz(), 0));
+	*gl_Position = *((mat4*)uniforms) * (v_attrs[0] + vec4(v_attrs[3].xyz(), 0));
 
 	//printf("%f %f %f\n", builtins->gl_Position->x, builtins->gl_Position->y, builtins->gl_Position->z);
 }
@@ -595,7 +593,7 @@ void interpolate_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 }
 
 
-void texture_replace_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void texture_replace_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	((vec2*)vs_output)[0] = ((vec4*)vertex_attribs)[2].xy(); //tex_coords
 
@@ -635,15 +633,15 @@ bool handle_events()
 				glProvokingVertex(provoking_mode);
 			} else if (keysym.scancode == keyvalues[INTERPOLATION]) {
 				glUseProgram(my_programs[cur_shader]);
-				if (interp_mode == SMOOTH) {
+				if (interp_mode == PGL_SMOOTH) {
 					printf("noperspective\n");
 					//todo change this func to DSA style, ie call it with the program to modify
 					//rather than always modifying the current shader
 					pglSetInterp(shader_pairs[cur_shader].vs_output_size, noperspective);
-					interp_mode = NOPERSPECTIVE;
+					interp_mode = PGL_NOPERSPECTIVE;
 				} else {
 					pglSetInterp(shader_pairs[cur_shader].vs_output_size, smooth);
-					interp_mode = SMOOTH;
+					interp_mode = PGL_SMOOTH;
 					printf("smooth\n");
 				}
 			} else if (keysym.scancode == keyvalues[SHADER]) {

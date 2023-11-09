@@ -6,11 +6,11 @@ typedef struct t1D_uniforms
 } t1D_uniforms;
 
 
-void tex1d_replace_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void tex1d_replace_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	vs_output[0] = ((vec4*)vertex_attribs)[2].x; //tex_coord
+	vs_output[0] = vertex_attribs[2].x; //tex_coord
 
-	*(vec4*)&builtins->gl_Position = ((vec4*)vertex_attribs)[0];
+	builtins->gl_Position = vertex_attribs[0];
 
 }
 
@@ -28,7 +28,7 @@ void test_texture1D(int argc, char** argv, void* data)
 {
 
 	t1D_uniforms the_uniforms;
-	GLenum smooth[2] = { SMOOTH, SMOOTH };
+	GLenum smooth[1] = { PGL_SMOOTH };
 
 	float points[] =
 	{
@@ -61,6 +61,7 @@ void test_texture1D(int argc, char** argv, void* data)
 	GLuint texture;
 	glGenTextures(1, &texture);
 
+	// TODO why is this here?  All current tests are <= 4
 	if (argc <= 4) {
 		glBindTexture(GL_TEXTURE_1D, texture);
 		glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -90,11 +91,9 @@ void test_texture1D(int argc, char** argv, void* data)
 
 	// default is GL_REPEAT for argc == 2
 	if (argc == 3) {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	} else if (argc == 4) {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+		glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
 	}
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 0, 0);

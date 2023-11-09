@@ -6,7 +6,7 @@ typedef struct instanceid_uniforms
 } instanceid_uniforms;
 
 
-void glinstanceid_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void glinstanceid_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void glinstanceid_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 void test_instanceid(int argc, char** argv, void* data)
@@ -69,7 +69,6 @@ void test_instanceid(int argc, char** argv, void* data)
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-
 	GLuint myshader = pglCreateProgram(glinstanceid_vs, glinstanceid_fs, 0, NULL, GL_FALSE);
 	glUseProgram(myshader);
 
@@ -78,15 +77,14 @@ void test_instanceid(int argc, char** argv, void* data)
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDrawArraysInstanced(GL_TRIANGLES, 0, 3, 100);
-
 }
 
 
-void glinstanceid_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void glinstanceid_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	instanceid_uniforms* u = (instanceid_uniforms*)uniforms;
 
-	vec4 vert = ((vec4*)vertex_attribs)[0];
+	vec4 vert = vertex_attribs[0];
 	vec2 offset = u->inst_offsets[builtins->gl_InstanceID];
 	vert.x += offset.x;
 	vert.y += offset.y;

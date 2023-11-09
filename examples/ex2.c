@@ -20,24 +20,18 @@ u32* bbufpix;
 
 glContext the_Context;
 
-typedef struct My_Uniforms
-{
-	mat4 mvp_mat;
-	vec4 v_color;
-} My_Uniforms;
-
 void cleanup();
 void setup_context();
 
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void smooth_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 int main(int argc, char** argv)
 {
 	setup_context();
 
-	GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
+	GLenum smooth[4] = { PGL_SMOOTH4 };
 
 	float points_n_colors[] = {
 		-0.5, -0.5, 0.0,
@@ -49,9 +43,6 @@ int main(int argc, char** argv)
 		 0.0,  0.5, 0.0,
 		 0.0,  0.0, 1.0 };
 
-	My_Uniforms the_uniforms;
-	mat4 identity = IDENTITY_MAT4();
-
 	GLuint triangle;
 	glGenBuffers(1, &triangle);
 	glBindBuffer(GL_ARRAY_BUFFER, triangle);
@@ -61,12 +52,10 @@ int main(int argc, char** argv)
 	glEnableVertexAttribArray(4);
 	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(float)*6, (void*)(sizeof(float)*3));
 
+	// Note, no uniforms used in these shaders so no need to set any
 	GLuint myshader = pglCreateProgram(smooth_vs, smooth_fs, 4, smooth, GL_FALSE);
 	glUseProgram(myshader);
 
-	pglSetUniform(&the_uniforms);
-
-	memcpy(the_uniforms.mvp_mat, identity, sizeof(mat4));
 
 	glClearColor(0, 0, 0, 1);
 
@@ -113,11 +102,11 @@ int main(int argc, char** argv)
 }
 
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void smooth_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	((vec4*)vs_output)[0] = ((vec4*)vertex_attribs)[4]; //color
+	((vec4*)vs_output)[0] = vertex_attribs[4]; //color
 
-	builtins->gl_Position = mult_mat4_vec4(*((mat4*)uniforms), *(vec4*)vertex_attribs);
+	builtins->gl_Position = vertex_attribs[0];
 }
 
 void smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
@@ -147,7 +136,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

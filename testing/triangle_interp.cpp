@@ -4,9 +4,10 @@ enum { ATTR_VERTEX, ATTR_COLOR };
 // Not actually used/needed
 typedef struct ti_uniforms
 {
-	vec4 v_color;
+	vec4 color;
 } ti_uniforms;
 
+// TODO compare speed of interleaved vs segregated attributes (both 1 and 2 buffers for the latter)
 struct vert_attribs
 {
 	vec3 pos;
@@ -15,13 +16,13 @@ struct vert_attribs
 	vert_attribs(vec3 p, vec3 c) : pos(p), color(c) {}
 };
 
-void ti_smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void ti_smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void ti_smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
 float tris_interp_perf(int frames, int argc, char** argv, void* data)
 {
-	GLenum smooth[3] = { SMOOTH, SMOOTH, SMOOTH };
+	GLenum smooth[3] = { PGL_SMOOTH3 };
 
 	srand(10);
 
@@ -37,8 +38,9 @@ float tris_interp_perf(int frames, int argc, char** argv, void* data)
 
 	ti_uniforms the_uniforms;
 
-	Buffer triangles(1);
-	triangles.bind(GL_ARRAY_BUFFER);
+	GLuint triangles;
+	glGenBuffers(1, &triangles);
+	glBindBuffer(GL_ARRAY_BUFFER, triangles);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vert_attribs)*tris.size(), &tris[0], GL_STATIC_DRAW);
 	glEnableVertexAttribArray(ATTR_VERTEX);
 	pglVertexAttribPointer(ATTR_VERTEX, 3, GL_FLOAT, GL_FALSE, sizeof(vert_attribs), 0);
@@ -74,11 +76,11 @@ float tris_interp_perf(int frames, int argc, char** argv, void* data)
 
 
 
-void ti_smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void ti_smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	((vec4*)vs_output)[0] = ((vec4*)vertex_attribs)[ATTR_COLOR];
 
-	*(vec4*)&builtins->gl_Position = ((vec4*)vertex_attribs)[ATTR_VERTEX];
+	builtins->gl_Position = vertex_attribs[ATTR_VERTEX];
 }
 
 void ti_smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)

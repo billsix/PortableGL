@@ -1,26 +1,41 @@
+function os.capture(cmd, raw)
+  local f = assert(io.popen(cmd, 'r'))
+  local s = assert(f:read('*a'))
+  f:close()
+  if raw then return s end
+  s = string.gsub(s, '^%s+', '')
+  s = string.gsub(s, '%s+$', '')
+  s = string.gsub(s, '[\n\r]+', ' ')
+  return s
+end
 
 workspace "Polished_Examples"
 	configurations { "Debug", "Release" }
-	
-	targetdir "."
-	includedirs { "../", "../glcommon", "/usr/include/SDL2" }
-
 	kind "ConsoleApp"
+	targetdir "."
+
+	s = os.capture("sdl2-config --cflags")
+
+	sdl_incdir, sdl_def = string.match(s, "-I(%g+)%s+-D(%g+)")
+	print(sdl_incdir, sdl_def)
+	includedirs { "../", "../glcommon", sdl_incdir }
+	libdirs { os.findlib("SDL2") }
+
 
 	filter "system:linux"
 		links { "SDL2", "m" }
 
 	filter "system:windows"
-		--linkdir "/mingw64/lib"
+		--libdirs "/mingw64/lib"
 		--buildoptions "-mwindows"
 		links { "mingw32", "SDL2main", "SDL2" }
 
 	filter "Debug"
-		defines { "DEBUG" }
+		defines { "DEBUG", "USING_PORTABLEGL", sdl_def }
 		symbols "On"
 
 	filter "Release"
-		defines { "NDEBUG" }
+		defines { "NDEBUG", "USING_PORTABLEGL", sdl_def }
 		optimize "On"
 
 	filter { "action:gmake", "Release" }
@@ -37,6 +52,12 @@ workspace "Polished_Examples"
 			"./ex1.c"
 		}
 
+	project "std_shader_ex1"
+		language "C"
+		files {
+			"./ex1_std_shaders.c"
+		}
+
 	project "line_testing"
 		language "C"
 		files {
@@ -47,6 +68,12 @@ workspace "Polished_Examples"
 		language "C"
 		files {
 			"./ex2.c"
+		}
+
+	project "std_shader_ex2"
+		language "C"
+		files {
+			"./ex2_std_shaders.c"
 		}
 
 	project "c_ex3"

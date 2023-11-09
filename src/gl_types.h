@@ -205,7 +205,14 @@ enum
 	GL_LINEAR_MIPMAP_NEAREST,
 	GL_LINEAR_MIPMAP_LINEAR,
 
-	//texture/depth/stencil formats
+	//texture/depth/stencil formats including some from GLES and custom
+	PGL_ONE_ALPHA, // Like GL_ALPHA except uses 1's for rgb not 0's
+
+	// From OpenGL ES
+	GL_ALPHA, // Fills 0's in for rgb
+	GL_LUMINANCE, // used for rgb, fills 1 for alpha
+	GL_LUMINANCE_ALPHA, // lum used for rgb
+
 	GL_RED,
 	GL_RG,
 	GL_RGB,
@@ -237,7 +244,7 @@ enum
 	GL_UNPACK_ALIGNMENT,
 	GL_PACK_ALIGNMENT,
 
-	// Texture unit's (not used but eases porting)
+	// Texture units (not used but eases porting)
 	// but I'm not doing 80 or bothering with GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS
 	GL_TEXTURE0,
 	GL_TEXTURE1,
@@ -255,6 +262,8 @@ enum
 	GL_LINE_SMOOTH,  // TODO correctly
 	GL_BLEND,
 	GL_COLOR_LOGIC_OP,
+	GL_POLYGON_OFFSET_POINT,
+	GL_POLYGON_OFFSET_LINE,
 	GL_POLYGON_OFFSET_FILL,
 	GL_SCISSOR_TEST,
 	GL_STENCIL_TEST,
@@ -306,12 +315,14 @@ enum
 	//data types
 	GL_UNSIGNED_BYTE,
 	GL_BYTE,
-	GL_BITMAP,
 	GL_UNSIGNED_SHORT,
 	GL_SHORT,
 	GL_UNSIGNED_INT,
 	GL_INT,
 	GL_FLOAT,
+	GL_DOUBLE,
+
+	GL_BITMAP,  // TODO what is this for?
 
 	//glGetString info
 	GL_VENDOR,
@@ -375,6 +386,14 @@ enum
 	GL_TEXTURE_BINDING_CUBE_MAP,
 	GL_TEXTURE_BINDING_RECTANGLE,
 
+	GL_ARRAY_BUFFER_BINDING,
+	GL_ELEMENT_ARRAY_BUFFER_BINDING,
+	GL_VERTEX_ARRAY_BINDING,
+	GL_CURRENT_PROGRAM,
+
+	GL_VIEWPORT,
+	GL_SCISSOR_BOX,
+
 	//shader types etc. not used, just here for compatibility add what you
 	//need so you can use your OpenGL code with PortableGL with minimal changes
 	GL_COMPUTE_SHADER,
@@ -398,21 +417,35 @@ enum
 #define GL_FALSE 0
 #define GL_TRUE 1
 
+#define GL_STENCIL_BITS 8
+
+// Just GL_STENCIL_BITS of 1's, not an official GL enum/value
+//#define PGL_STENCIL_MASK ((1 << GL_STENCIL_BITS)-1)
+#define PGL_STENCIL_MASK 0xFF
 
 
 
-
+// Feel free to change these
 #define MAX_VERTICES 500000
-#define GL_MAX_VERTEX_ATTRIBS 16
-#define GL_MAX_VERTEX_OUTPUT_COMPONENTS 64
-#define GL_MAX_DRAW_BUFFERS 8
-#define GL_MAX_COLOR_ATTACHMENTS 8
+#define GL_MAX_VERTEX_ATTRIBS 8
+#define GL_MAX_VERTEX_OUTPUT_COMPONENTS (4*GL_MAX_VERTEX_ATTRIBS)
+#define GL_MAX_DRAW_BUFFERS 4
+#define GL_MAX_COLOR_ATTACHMENTS 4
 
 //TODO use prefix like GL_SMOOTH?  PGL_SMOOTH?
-enum { SMOOTH, FLAT, NOPERSPECTIVE };
+enum { PGL_SMOOTH, PGL_FLAT, PGL_NOPERSPECTIVE };
 
+#define PGL_SMOOTH2 PGL_SMOOTH, PGL_SMOOTH
+#define PGL_SMOOTH3 PGL_SMOOTH2, PGL_SMOOTH
+#define PGL_SMOOTH4 PGL_SMOOTH3, PGL_SMOOTH
 
+#define PGL_FLAT2 PGL_FLAT, PGL_FLAT
+#define PGL_FLAT3 PGL_FLAT2, PGL_FLAT
+#define PGL_FLAT4 PGL_FLAT3, PGL_FLAT
 
+#define PGL_NOPERSPECTIVE2 PGL_NOPERSPECTIVE, PGL_NOPERSPECTIVE
+#define PGL_NOPERSPECTIVE3 PGL_NOPERSPECTIVE2, PGL_NOPERSPECTIVE
+#define PGL_NOPERSPECTIVE4 PGL_NOPERSPECTIVE3, PGL_NOPERSPECTIVE
 
 //TODO NOT USED YET
 typedef struct PerVertex {
@@ -421,25 +454,33 @@ typedef struct PerVertex {
 	float gl_ClipDistance[6];
 } PerVertex;
 
+// TODO separate structs for vertex and fragment shader builtins?
+// input vs output?
 typedef struct Shader_Builtins
 {
-	//PerVertex gl_PerVertex;
-	vec4 gl_Position;
+	// vertex inputs
 	GLint gl_InstanceID;
-	vec2 gl_PointCoord;
+	GLint gl_BaseInstance; // 4.6 feature
 
-	GLboolean gl_FrontFacing;
+	// vertex outputs
+	vec4 gl_Position;
+	//float gl_PointSize;
+	//float gl_ClipDistance[6]
+
+	// fragment inputs
 	vec4 gl_FragCoord;
-	vec4 gl_FragColor;
+	vec2 gl_PointCoord;
+	GLboolean gl_FrontFacing;  // struct packing fail I know
 
+	// fragment outputs
+	vec4 gl_FragColor;
 	//vec4 gl_FragData[GL_MAX_DRAW_BUFFERS];
-	
 	float gl_FragDepth;
 	GLboolean discard;
 
 } Shader_Builtins;
 
-typedef void (*vert_func)(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+typedef void (*vert_func)(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 typedef void (*frag_func)(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 typedef struct glProgram
@@ -447,7 +488,7 @@ typedef struct glProgram
 	vert_func vertex_shader;
 	frag_func fragment_shader;
 	void* uniform;
-	int vs_output_size;
+	GLsizei vs_output_size;
 	GLenum interpolation[GL_MAX_VERTEX_OUTPUT_COMPONENTS];
 
 	// Need to come up with a better name to mean "I write to glFragDepth or discard
@@ -489,7 +530,7 @@ typedef struct glVertex_Attrib
 	GLsizei stride;  //
 	GLsizeiptr offset;  //
 	GLboolean normalized;
-	unsigned int buf;
+	GLuint buf;
 	GLboolean enabled;
 	GLuint divisor;
 } glVertex_Attrib;
@@ -513,12 +554,12 @@ void init_glVertex_Array(glVertex_Array* v);
 
 typedef struct glTexture
 {
-	unsigned int w;
-	unsigned int h;
-	unsigned int d;
+	GLsizei w;
+	GLsizei h;
+	GLsizei d;
 
-	int base_level;
-//	vec4 border_color; // no longer support borders not worth it
+	//GLint base_level;  // Not used
+	//vec4 border_color; // I no longer support borders, not worth it
 	GLenum mag_filter;
 	GLenum min_filter;
 	GLenum wrap_s;
@@ -552,13 +593,13 @@ typedef struct glFramebuffer
 {
 	u8* buf;
 	u8* lastrow; //better or worse than + h-1 every pixel draw?
-	size_t w;
-	size_t h;
+	GLsizei w;
+	GLsizei h;
 } glFramebuffer;
 
 typedef struct Vertex_Shader_output
 {
-	int size;
+	GLsizei size;
 	GLenum* interpolation;
 
 	// TODO Should this be a vector?  or just a pointer?

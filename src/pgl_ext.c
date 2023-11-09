@@ -54,7 +54,7 @@ void pglDrawFrame()
 			builtins.discard = GL_FALSE;
 			frag_shader(NULL, &builtins, c->programs.a[c->cur_program].uniform);
 			if (!builtins.discard)
-				draw_pixel(builtins.gl_FragColor, x, y, 0.0f);  //depth isn't used for pglDrawFrame
+				draw_pixel(builtins.gl_FragColor, x, y, 0.0f, GL_FALSE);  //scissor/stencil/depth aren't used for pglDrawFrame
 		}
 	}
 
@@ -101,7 +101,13 @@ void pglBufferData(GLenum target, GLsizei size, const GLvoid* data, GLenum usage
 	}
 }
 
-
+// TODO/NOTE
+// All pglTexImage* functions expect the user to pass in packed GL_RGBA
+// data. Unlike glTexImage*, no conversion is done, and format != GLRGBA
+// is an INVALID_ENUM error
+//
+// At least the latter part will change if I ever expand internal format
+// support
 void pglTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid* data)
 {
 	if (target != GL_TEXTURE_1D) {
@@ -113,6 +119,18 @@ void pglTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 	if (border) {
 		if (!c->error)
 			c->error = GL_INVALID_VALUE;
+		return;
+	}
+
+	if (type != GL_UNSIGNED_BYTE) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
+		return;
+	}
+
+	if (format != GL_RGBA) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
 		return;
 	}
 
@@ -134,17 +152,6 @@ void pglTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 		return;
 	}
 
-	int components;
-	if (format == GL_RED) components = 1;
-	else if (format == GL_RG) components = 2;
-	else if (format == GL_RGB || format == GL_BGR) components = 3;
-	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
-
 	// TODO see pglBufferData
 	if (!c->textures.a[cur_tex].user_owned)
 		free(c->textures.a[cur_tex].data);
@@ -152,15 +159,11 @@ void pglTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 	//TODO support other internal formats? components should be of internalformat not format
 	c->textures.a[cur_tex].data = (u8*)data;
 	c->textures.a[cur_tex].user_owned = GL_TRUE;
-
-	//TODO
-	//assume for now always RGBA coming in and that's what I'm storing it as
 }
 
 void pglTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid* data)
 {
-	//GL_TEXTURE_1D, GL_TEXTURE_2D, GL_TEXTURE_3D, GL_TEXTURE_1D_ARRAY, GL_TEXTURE_2D_ARRAY, GL_TEXTURE_RECTANGLE, or GL_TEXTURE_CUBE_MAP.
-	//will add others as they're implemented
+	// TODO handle cubemap properly
 	if (target != GL_TEXTURE_2D &&
 	    target != GL_TEXTURE_RECTANGLE &&
 	    target != GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
@@ -180,6 +183,18 @@ void pglTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 		return;
 	}
 
+	if (type != GL_UNSIGNED_BYTE) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
+		return;
+	}
+
+	if (format != GL_RGBA) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
+		return;
+	}
+
 	// data can't be null for user_owned data
 	if (!data) {
 		if (!c->error)
@@ -196,20 +211,6 @@ void pglTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 		return;
 	}
 
-	// TODO I don't actually support anything other than GL_RGBA for input or
-	// internal format ... so I should probably make the others errors and
-	// I'm not even checking internalFormat currently..
-	int components;
-	if (format == GL_RED) components = 1;
-	else if (format == GL_RG) components = 2;
-	else if (format == GL_RGB || format == GL_BGR) components = 3;
-	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
-
 	int cur_tex;
 
 	if (target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE) {
@@ -218,12 +219,10 @@ void pglTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 		c->textures.a[cur_tex].w = width;
 		c->textures.a[cur_tex].h = height;
 
-
 		// TODO see pglBufferData
 		if (!c->textures.a[cur_tex].user_owned)
 			free(c->textures.a[cur_tex].data);
 
-		//TODO support other internal formats? components should be of internalformat not format
 		// If you're using these pgl mapped functions, it assumes you are respecting
 		// your own current unpack alignment settings already
 		c->textures.a[cur_tex].data = (u8*)data;
@@ -284,6 +283,18 @@ void pglTexImage3D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 		return;
 	}
 
+	if (type != GL_UNSIGNED_BYTE) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
+		return;
+	}
+
+	if (format != GL_RGBA) {
+		if (!c->error)
+			c->error = GL_INVALID_ENUM;
+		return;
+	}
+
 	// data can't be null for user_owned data
 	if (!data) {
 		if (!c->error)
@@ -299,33 +310,12 @@ void pglTexImage3D(GLenum target, GLint level, GLint internalFormat, GLsizei wid
 	c->textures.a[cur_tex].h = height;
 	c->textures.a[cur_tex].d = depth;
 
-	if (type != GL_UNSIGNED_BYTE) {
-		// TODO
-		return;
-	}
-
-	// TODO add error?  only support GL_RGBA for now
-	int components;
-	if (format == GL_RED) components = 1;
-	else if (format == GL_RG) components = 2;
-	else if (format == GL_RGB || format == GL_BGR) components = 3;
-	else if (format == GL_RGBA || format == GL_BGRA) components = 4;
-	else {
-		if (!c->error)
-			c->error = GL_INVALID_ENUM;
-		return;
-	}
-
 	// TODO see pglBufferData
 	if (!c->textures.a[cur_tex].user_owned)
 		free(c->textures.a[cur_tex].data);
 
-	//TODO support other internal formats? components should be of internalformat not format
 	c->textures.a[cur_tex].data = (u8*)data;
 	c->textures.a[cur_tex].user_owned = GL_TRUE;
-
-	//TODO
-	//assume for now always RGBA coming in and that's what I'm storing it as
 }
 
 
@@ -361,6 +351,164 @@ void pglGetTextureData(GLuint texture, GLvoid** data)
 	} else if (!c->error) {
 		c->error = GL_INVALID_OPERATION; // matching error code of binding invalid buffer
 	}
+}
+
+// Not sure where else to put these two functions, they're helper/stopgap
+// measures to deal with PGL only supporting RGBA but they're
+// also useful functions on their own and not really "extensions"
+// so I don't feel right putting them here or giving them a pgl prefix.
+//
+// Takes an image with GL_UNSIGNED_BYTE channels in
+// a format other than packed GL_RGBA and returns it in (tightly packed) GL_RGBA
+// (with the same rules as GLSL texture access for filling the other channels).
+// See section 3.6.2 page 65 of the OpenGL ES 2.0.25 spec pdf
+//
+// IOW this creates an image that will give you the same values in the
+// shader that you would have gotten had you used the unsupported
+// format.  Passing in a GL_RGBA where pitch == w*4 reduces to a single memcpy
+//
+// If output is not NULL, it will allocate the output image for you
+// pitch is the length of a row in bytes.
+//
+// Returns the resulting packed RGBA image
+u8* convert_format_to_packed_rgba(u8* output, u8* input, int w, int h, int pitch, GLenum format)
+{
+	int i, j, size = w*h;
+	int rb = pitch;
+	u8* out = output;
+	if (!out) {
+		out = (u8*)PGL_MALLOC(size*4);
+	}
+	memset(out, 0, size*4);
+
+	u8* p = out;
+
+	if (format == PGL_ONE_ALPHA) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = UINT8_MAX;
+				p[1] = UINT8_MAX;
+				p[2] = UINT8_MAX;
+				p[3] = input[i*rb+j];
+			}
+		}
+	} else if (format == GL_ALPHA) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[3] = input[i*rb+j];
+			}
+		}
+	} else if (format == GL_LUMINANCE) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j];
+				p[1] = input[i*rb+j];
+				p[2] = input[i*rb+j];
+				p[3] = UINT8_MAX;
+			}
+		}
+	} else if (format == GL_RED) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j];
+				p[3] = UINT8_MAX;
+			}
+		}
+	} else if (format == GL_LUMINANCE_ALPHA) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j*2];
+				p[1] = input[i*rb+j*2];
+				p[2] = input[i*rb+j*2];
+				p[3] = input[i*rb+j*2+1];
+			}
+		}
+	} else if (format == GL_RG) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j*2];
+				p[1] = input[i*rb+j*2+1];
+				p[3] = UINT8_MAX;
+			}
+		}
+	} else if (format == GL_RGB) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j*3];
+				p[1] = input[i*rb+j*3+1];
+				p[2] = input[i*rb+j*3+2];
+				p[3] = UINT8_MAX;
+			}
+		}
+	} else if (format == GL_BGR) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j*3+2];
+				p[1] = input[i*rb+j*3+1];
+				p[2] = input[i*rb+j*3];
+				p[3] = UINT8_MAX;
+			}
+		}
+	} else if (format == GL_BGRA) {
+		for (i=0; i<h; ++i) {
+			for (j=0; j<w; ++j, p+=4) {
+				p[0] = input[i*rb+j*4+2];
+				p[1] = input[i*rb+j*4+1];
+				p[2] = input[i*rb+j*4];
+				p[3] = input[i*rb+j*4+3];
+			}
+		}
+	} else if (format == GL_RGBA) {
+		if (pitch == w*4) {
+			// Just a plain copy
+			memcpy(out, input, w*h*4);
+		} else {
+			// get rid of row padding
+			int bw = w*4;
+			for (i=0; i<h; ++i) {
+				memcpy(&out[i*bw], &input[i*rb], bw);
+			}
+		}
+	} else {
+		puts("Unrecognized or unsupported input format!");
+		free(out);
+		out = NULL;
+	}
+	return out;
+}
+
+// pass in packed single channel 8 bit image where background=0, foreground=255
+// and get a packed 4-channel rgba image using the colors provided
+u8* convert_grayscale_to_rgba(u8* input, int size, u32 bg_rgba, u32 text_rgba)
+{
+	float rb, gb, bb, ab, rt, gt, bt, at;
+
+	u8* tmp = (u8*)&bg_rgba;
+	rb = tmp[0];
+	gb = tmp[1];
+	bb = tmp[2];
+	ab = tmp[3];
+
+	tmp = (u8*)&text_rgba;
+	rt = tmp[0];
+	gt = tmp[1];
+	bt = tmp[2];
+	at = tmp[3];
+
+	//printf("background = (%f, %f, %f, %f)\ntext = (%f, %f, %f, %f)\n", rb, gb, bb, ab, rt, gt, bt, at);
+
+	u8* color_image = (u8*)PGL_MALLOC(size * 4);
+	float t;
+	for (int i=0; i<size; ++i) {
+		t = (input[i] - 0) / 255.0;
+		color_image[i*4] = rt * t + rb * (1 - t);
+		color_image[i*4+1] = gt * t + gb * (1 - t);
+		color_image[i*4+2] = bt * t + bb * (1 - t);
+		color_image[i*4+3] = at * t + ab * (1 - t);
+	}
+
+
+	return color_image;
 }
 
 

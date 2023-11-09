@@ -2,8 +2,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 
-#define MANGLE_TYPES
-#define EXCLUDE_GLSL
+#define PGL_MANGLE_TYPES
 
 #include "rsw_math.h"
 #include "gltools.h"
@@ -72,13 +71,13 @@ void cleanup();
 void setup_context();
 int handle_events(GLFrame& camera_frame, unsigned int last_time, unsigned int cur_time);
 
-void basic_transform_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void basic_transform_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void uniform_color_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
-void gouraud_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void gouraud_ads_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void gouraud_ads_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
-void phong_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void phong_ads_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void phong_ads_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
@@ -277,7 +276,7 @@ int main(int argc, char** argv)
 
 
 
-	GLenum interpolation[5] = { SMOOTH, SMOOTH, SMOOTH };
+	GLenum interpolation[5] = { PGL_SMOOTH3 };
 
 	GLuint basic_shader = pglCreateProgram(basic_transform_vp, uniform_color_fp, 0, NULL, GL_FALSE);
 	glUseProgram(basic_shader);
@@ -441,7 +440,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()
@@ -601,7 +599,7 @@ int handle_events(GLFrame& camera_frame, unsigned int last_time, unsigned int cu
 }
 
 
-void basic_transform_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void basic_transform_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	My_Uniforms* u = (My_Uniforms*)uniforms;
 	*(vec4*)&builtins->gl_Position = u->mvp_mat * ((vec4*)vertex_attribs)[0];
@@ -614,7 +612,7 @@ void uniform_color_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms
 	*fragcolor = u->color;
 }
 
-void gouraud_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void gouraud_ads_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	vec4* vert_attribs = (vec4*)vertex_attribs;
 	My_Uniforms* u = (My_Uniforms*)uniforms;
@@ -658,12 +656,12 @@ void gouraud_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* bui
 
 void gouraud_ads_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 {
-	glinternal_vec4 color = { fs_input[0], fs_input[1], fs_input[2], 1 };
+	pgl_vec4 color = { fs_input[0], fs_input[1], fs_input[2], 1 };
 	builtins->gl_FragColor = color;
 }
 
 
-void phong_ads_vp(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void phong_ads_vp(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	vec4* vert_attribs = (vec4*)vertex_attribs;
 	My_Uniforms* u = (My_Uniforms*)uniforms;
@@ -705,6 +703,6 @@ void phong_ads_fp(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 		out_light += u->Ks * shine;
 	}
 	
-	glinternal_vec4 color = { out_light.x, out_light.y, out_light.z, 1 };
+	pgl_vec4 color = { out_light.x, out_light.y, out_light.z, 1 };
 	builtins->gl_FragColor = color;
 }

@@ -1,8 +1,7 @@
 #include "rsw_math.h"
 #include "rtweekend.h"
 
-#define MANGLE_TYPES
-#define EXCLUDE_GLSL
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
 #include "gltools.h"
 #include "GLObjects.h"
@@ -100,7 +99,7 @@ void setup_context();
 void setup_gl_data();
 
 
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void normal_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void raytracer_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
@@ -235,9 +234,9 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void normal_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	*(vec4*)&builtins->gl_Position = ((vec4*)vertex_attribs)[0];
+	builtins->gl_Position = vertex_attribs[0];
 }
 
 
@@ -393,7 +392,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

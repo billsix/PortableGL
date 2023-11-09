@@ -6,8 +6,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 
-#define MANGLE_TYPES
-#define EXCLUDE_GLSL
+#define PGL_MANGLE_TYPES
 
 #include "rsw_math.h"
 #include "gltools.h"
@@ -85,22 +84,21 @@ enum
 	NUM_PROGRAMS
 };
 
-//#define NUM_PROGRAMS 4
-void texture_replace_instanced_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void texture_replace_instanced_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void texture_replace_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
-void texture_replace_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void texture_replace_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void texture_replace_modulate_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
-void texture_ADS_instanced_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void texture_ADS_instanced_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void texture_ADS_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
-void texture_ADS_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void texture_ADS_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void texture_ADS_modulate_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
-GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
-GLenum noperspective[4] = { NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE, NOPERSPECTIVE };
+GLenum smooth[4] = { PGL_SMOOTH4 };
+GLenum noperspective[4] = { PGL_NOPERSPECTIVE4 };
 
 
 typedef struct glShaderPair
@@ -115,12 +113,12 @@ typedef struct glShaderPair
 
 glShaderPair shader_pairs[NUM_PROGRAMS] =
 {
-	{ texture_replace_instanced_vs, texture_replace_fs, 2, { SMOOTH, SMOOTH }, GL_FALSE },
-	{ texture_replace_vs, texture_replace_modulate_fs, 2, { SMOOTH, SMOOTH }, GL_FALSE },
+	{ texture_replace_instanced_vs, texture_replace_fs, 2, { PGL_SMOOTH2 }, GL_FALSE },
+	{ texture_replace_vs, texture_replace_modulate_fs, 2, { PGL_SMOOTH2 }, GL_FALSE },
 
 	//gouraud in vertex shader
-	{ texture_ADS_instanced_vs, texture_ADS_fs, 3, { SMOOTH, SMOOTH, SMOOTH }, GL_FALSE },
-	{ texture_ADS_vs, texture_ADS_modulate_fs, 3, { SMOOTH, SMOOTH, SMOOTH }, GL_FALSE }
+	{ texture_ADS_instanced_vs, texture_ADS_fs, 3, { PGL_SMOOTH3 }, GL_FALSE },
+	{ texture_ADS_vs, texture_ADS_modulate_fs, 3, { PGL_SMOOTH3 }, GL_FALSE }
 };
 
 enum
@@ -145,7 +143,7 @@ vector<vec3> box_verts;
 vector<ivec3> box_tris;
 vector<vec2> box_tex;
 
-GLenum interp_mode = SMOOTH;
+GLenum interp_mode = PGL_SMOOTH;
 
 
 GLuint cur_shader;
@@ -605,7 +603,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()
@@ -622,11 +619,11 @@ void cleanup()
 
 
 
-void texture_replace_instanced_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void texture_replace_instanced_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	vec4* v_attribs = (vec4*)vertex_attribs;
 
-	((vec2*)vs_output)[0] = ((vec4*)v_attribs)[2].xy(); //tex_coords
+	((vec2*)vs_output)[0] = v_attribs[2].xy(); //tex_coords
 
 	*(vec4*)&builtins->gl_Position = *((mat4*)uniforms) * (v_attribs[0] + vec4(v_attribs[3].xyz(), 0));
 
@@ -642,7 +639,7 @@ void texture_replace_fs(float* fs_input, Shader_Builtins* builtins, void* unifor
 
 
 
-void texture_replace_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void texture_replace_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	((vec2*)vs_output)[0] = ((vec4*)vertex_attribs)[2].xy(); //tex_coords
 
@@ -657,16 +654,16 @@ void texture_replace_modulate_fs(float* fs_input, Shader_Builtins* builtins, voi
 	vec4 modulate = ((My_Uniforms*)uniforms)->modulate;
 
 	//builtins->gl_FragColor = texture2D(tex, tex_coords.x, tex_coords.y);
-	//builtins->gl_FragColor = mult_vec4s(builtins->gl_FragColor, *(glinternal_vec4*)&modulate);
+	//builtins->gl_FragColor = mult_vec4s(builtins->gl_FragColor, *(pgl_vec4*)&modulate);
 
-	glinternal_vec4 tmp = texture2D(tex, tex_coords.x, tex_coords.y);
+	pgl_vec4 tmp = texture2D(tex, tex_coords.x, tex_coords.y);
 	*(vec4*)&builtins->gl_FragColor = modulate * vec4(tmp.x, tmp.y, tmp.z, tmp.w);
 }
 
 
 
 
-void texture_ADS_instanced_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void texture_ADS_instanced_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	vec4* vert_attribs = (vec4*)vertex_attribs;
 	My_Uniforms* u = (My_Uniforms*)uniforms;
@@ -708,15 +705,15 @@ void texture_ADS_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 	GLuint tex = ((My_Uniforms*)uniforms)->tex0;
 
 	//many ways to handle the fact that texture2D returns it's own internal type
-	//which is glinternal_vec4 if MANGLE_TYPES is defined
-	glinternal_vec4 color = texture2D(tex, tex_coords.x, tex_coords.y);
+	//which is pgl_vec4 if MANGLE_TYPES is defined
+	pgl_vec4 color = texture2D(tex, tex_coords.x, tex_coords.y);
 	color = scale_vec4(color, light_intensity);
 
 	builtins->gl_FragColor = color;
 }
 
 
-void texture_ADS_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void texture_ADS_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	vec4* vert_attribs = (vec4*)vertex_attribs;
 	My_Uniforms* u = (My_Uniforms*)uniforms;
@@ -783,13 +780,13 @@ bool handle_events()
 				provoking_mode = (provoking_mode == GL_LAST_VERTEX_CONVENTION) ? GL_FIRST_VERTEX_CONVENTION : GL_LAST_VERTEX_CONVENTION;
 				glProvokingVertex(provoking_mode);
 			} else if (keysym.scancode == keyvalues[INTERPOLATION]) {
-				if (interp_mode == SMOOTH) {
+				if (interp_mode == PGL_SMOOTH) {
 					printf("noperspective\n");
 					pglSetInterp(shader_pairs[cur_shader].vs_output_size, noperspective);
-					interp_mode = NOPERSPECTIVE;
+					interp_mode = PGL_NOPERSPECTIVE;
 				} else {
 					pglSetInterp(shader_pairs[cur_shader].vs_output_size, smooth);
-					interp_mode = SMOOTH;
+					interp_mode = PGL_SMOOTH;
 					printf("smooth\n");
 				}
 			} else if (keysym.scancode == keyvalues[SHADER]) {

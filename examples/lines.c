@@ -27,26 +27,15 @@ u32* bbufpix;
 
 glContext the_Context;
 
-typedef struct My_Uniforms
-{
-	mat4 mvp_mat;
-	vec4 v_color;
-} My_Uniforms;
-
 void cleanup();
 void setup_context();
 
-
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
-void normal_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 int main(int argc, char** argv)
 {
 	setup_context();
 
-	My_Uniforms the_uniforms;
-	mat4 identity = IDENTITY_MAT4();
-
+	pgl_uniforms the_uniforms;
 	
 	vec3 center = make_vec3(WIDTH/2.0f, HEIGHT/2.0f, 0);
 	vec3 glcenter = make_vec3(0, 0, 0);
@@ -58,18 +47,15 @@ int main(int argc, char** argv)
 	glGenBuffers(1, &line);
 	glBindBuffer(GL_ARRAY_BUFFER, line);
 	pglBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*2, points, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(PGL_ATTR_VERT);
+	glVertexAttribPointer(PGL_ATTR_VERT, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-
-	GLuint myshader = pglCreateProgram(normal_vs, normal_fs, 0, NULL, GL_FALSE);
-	glUseProgram(myshader);
+	GLuint std_shaders[PGL_NUM_SHADERS];
+	pgl_init_std_shaders(std_shaders);
+	glUseProgram(std_shaders[PGL_SHADER_IDENTITY]);
 
 	pglSetUniform(&the_uniforms);
-
-	the_uniforms.v_color = Red;
-
-	memcpy(the_uniforms.mvp_mat, identity, sizeof(mat4));
+	the_uniforms.color = Red;
 
 	glClearColor(0, 0, 0, 1);
 
@@ -80,7 +66,7 @@ int main(int argc, char** argv)
 	unsigned int last_frame = 0;
 	float frame_time;
 
-	int draw_put_line = GL_FALSE;
+	int draw_put_line = GL_TRUE;
 	float inv_speed = 6000.0f;
 
 
@@ -144,8 +130,8 @@ int main(int argc, char** argv)
 			endpt = make_vec3(0.9*WIDTH/2.0f, 0, 0);
 			endpt = mult_mat3_vec3(rot_mat, endpt);
 
-			//put_wide_line(white, width, center.x, center.y, center.x+endpt.x, center.y+endpt.y);
-			put_wide_line2(white, width, center.x, center.y, center.x+endpt.x, center.y+endpt.y);
+			put_wide_line_simple(white, width, center.x, center.y, center.x+endpt.x, center.y+endpt.y);
+			//put_wide_line2(white, width, center.x, center.y, center.x+endpt.x, center.y+endpt.y);
 		}
 
 		SDL_UpdateTexture(tex, NULL, bbufpix, WIDTH * sizeof(u32));
@@ -157,17 +143,6 @@ int main(int argc, char** argv)
 	cleanup();
 
 	return 0;
-}
-
-
-void normal_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
-{
-	builtins->gl_Position = mult_mat4_vec4(*((mat4*)uniforms), ((vec4*)vertex_attribs)[0]);
-}
-
-void normal_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
-{
-	builtins->gl_FragColor = ((My_Uniforms*)uniforms)->v_color;
 }
 
 void setup_context()
@@ -194,8 +169,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-
-	set_glContext(&the_Context);
 }
 
 void cleanup()

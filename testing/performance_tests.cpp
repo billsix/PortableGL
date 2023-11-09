@@ -1,8 +1,8 @@
 #include "rsw_math.h"
 
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
-#include "GLObjects.h"
+#include "portablegl.h"
 
 
 #include <vector>
@@ -14,7 +14,7 @@
 #include <SDL.h>
 
 #define WIDTH 640
-#define HEIGHT 480
+#define HEIGHT 640
 
 using namespace std;
 
@@ -43,55 +43,81 @@ typedef struct pgl_perftest
 } pgl_perftest;
 
 // put above includes because we use this in every one
+// TODO why do I even have this?  Do I really need to be able
+// to exit in the middle of performance tests?  Would taking it
+// out make them noticeably faster?
 int handle_events();
 
 #include "point_perf.cpp"
 #include "line_perf.cpp"
 #include "triangle_perf.cpp"
 #include "triangle_interp.cpp"
+#include "tri_clip_perf.cpp"
+#include "blending_perf.cpp"
 
 
-#define NUM_TESTS 5
-
-pgl_perftest test_suite[NUM_TESTS] =
+pgl_perftest test_suite[] =
 {
-	{ "points_perf", points_perf, 4000, 1 },
-	{ "pointsize_perf", points_perf, 4000, 4 },
-	{ "lines_perf", lines_perf, 2000 },
+	{ "points_perf", points_perf, 5000, 1 },
+	{ "pointsize_perf", points_perf, 5000, 4 },
+	{ "lines_perf", lines_perf, 2000, 1 },
+	{ "lines8_perf", lines_perf, 1000, 8 },
+	{ "lines16_perf", lines_perf, 250, 16 },
 	{ "triangles_perf", tris_perf, 300 },
-	{ "tri_interp_perf", tris_interp_perf, 300 }
+	{ "tri_interp_perf", tris_interp_perf, 300 },
+	{ "tri_clipxy_perf", tri_clipxy_perf, 4000 },
+	{ "tri_clipz_perf", tri_clipz_perf, 4000 },
+	{ "tri_clipxyz_perf", tri_clipxyz_perf, 4000 },
+	{ "blend_perf", blend_test, 2000 }
 
 };
 
+#define NUM_TESTS (sizeof(test_suite)/sizeof(*test_suite))
 
 void cleanup_SDL2();
 void setup_SDL2();
+int find_test(char* name);
+void run_test(int i);
+
 
 
 int main(int argc, char** argv)
 {
 	setup_SDL2();
 
-	float fps;
-
-	for (int i=0; i<NUM_TESTS; ++i) {
-		bbufpix = NULL;
-		if (!init_glContext(&the_Context, &bbufpix, WIDTH, HEIGHT, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)) {
-			puts("Failed to initialize glContext");
-			exit(0);
+	int total;
+	if (argc == 1) {
+		printf("Running %ld tests...\n", NUM_TESTS);
+		for (int i=0; i<NUM_TESTS; ++i) {
+			run_test(i);
 		}
-		set_glContext(&the_Context);
-
-		fps = test_suite[i].test_func(test_suite[i].frames, test_suite[i].num, NULL, NULL);
-
-		printf("%s: %.3f FPS\n", test_suite[i].name, fps);
-
-		free_glContext(&the_Context);
+	} else {
+		int found;
+		total = argc-1;
+		printf("Attempting to run %d tests...\n", total);
+		for (int i=1; i<argc; i++) {
+			found = find_test(argv[i]);
+			if (found >= 0) {
+				run_test(found);
+			} else {
+				printf("Error: could not find test '%s', skipping\n", argv[i]);
+			}
+		}
 	}
 
-	cleanup_SDL2();	
+	cleanup_SDL2();
 
 	return 0;
+}
+
+int find_test(char* name)
+{
+	for (int i=0; i<NUM_TESTS; i++) {
+		if (!strcmp(name, test_suite[i].name)) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 int handle_events()
@@ -101,12 +127,12 @@ int handle_events()
 
 	while (SDL_PollEvent(&e)) {
 		if (e.type == SDL_QUIT)
-			return 1;
+			exit(0);
 		if (e.type == SDL_KEYDOWN) {
 			sc = e.key.keysym.scancode;
 		
 			if (sc == SDL_SCANCODE_ESCAPE) {
-				return 1;
+				exit(0);
 			}
 		}
 	}
@@ -143,3 +169,17 @@ void cleanup_SDL2()
 }
 
 
+void run_test(int i)
+{
+	bbufpix = NULL;
+	if (!init_glContext(&the_Context, &bbufpix, WIDTH, HEIGHT, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)) {
+		puts("Failed to initialize glContext");
+		exit(0);
+	}
+
+	float fps = test_suite[i].test_func(test_suite[i].frames, test_suite[i].num, NULL, NULL);
+
+	printf("%s: %.3f FPS\n", test_suite[i].name, fps);
+
+	free_glContext(&the_Context);
+}

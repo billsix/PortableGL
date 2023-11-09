@@ -23,13 +23,13 @@ ifeq ($(config),debug)
   OBJDIR     = obj/Debug/run_tests
   TARGETDIR  = .
   TARGET     = $(TARGETDIR)/run_tests
-  DEFINES   += -DDEBUG
+  DEFINES   += -DDEBUG -DUSING_PORTABLEGL -D_REENTRANT
   INCLUDES  += -I.. -I../glcommon -I/usr/include/SDL2
   CPPFLAGS  += -MMD -MP $(DEFINES) $(INCLUDES)
-  CFLAGS    += $(CPPFLAGS) $(ARCH) -g -fno-rtti -fno-exceptions -fno-strict-aliasing -Wunused-variable -Wreturn-type -fsanitize=address
+  CFLAGS    += $(CPPFLAGS) $(ARCH) -g -ffp-contract=off -fno-rtti -fno-exceptions -fno-strict-aliasing -Wunused-variable -Wreturn-type -fsanitize=address,undefined
   CXXFLAGS  += $(CFLAGS) 
-  LDFLAGS   += -fsanitize=address
-  LIBS      += -lSDL2 -lm
+  LDFLAGS   += -fsanitize=address,undefined
+  LIBS      += -lm
   RESFLAGS  += $(DEFINES) $(INCLUDES) 
   LDDEPS    += 
   LINKCMD    = $(CXX) -o $(TARGET) $(OBJECTS) $(LDFLAGS) $(RESOURCES) $(ARCH) $(LIBS)
@@ -45,13 +45,13 @@ ifeq ($(config),release)
   OBJDIR     = obj/Release/run_tests
   TARGETDIR  = .
   TARGET     = $(TARGETDIR)/run_tests
-  DEFINES   += -DNDEBUG
+  DEFINES   += -DNDEBUG -DUSING_PORTABLEGL -D_REENTRANT
   INCLUDES  += -I.. -I../glcommon -I/usr/include/SDL2
   CPPFLAGS  += -MMD -MP $(DEFINES) $(INCLUDES)
-  CFLAGS    += $(CPPFLAGS) $(ARCH) -O2 -fno-rtti -fno-exceptions -fno-strict-aliasing -Wunused-variable -Wreturn-type -O3
+  CFLAGS    += $(CPPFLAGS) $(ARCH) -O2 -ffp-contract=off -fno-rtti -fno-exceptions -fno-strict-aliasing -Wunused-variable -Wreturn-type -O3
   CXXFLAGS  += $(CFLAGS) 
   LDFLAGS   += -s
-  LIBS      += -lSDL2 -lm
+  LIBS      += -lm
   RESFLAGS  += $(DEFINES) $(INCLUDES) 
   LDDEPS    += 
   LINKCMD    = $(CXX) -o $(TARGET) $(OBJECTS) $(LDFLAGS) $(RESOURCES) $(ARCH) $(LIBS)

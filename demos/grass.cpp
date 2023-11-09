@@ -1,5 +1,5 @@
 
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
 #include "portablegl.h"
 
@@ -46,7 +46,7 @@ void setup_context();
 int handle_events(GLFrame& camera_frame, unsigned int last_time, unsigned int cur_time);
 
 
-void grass_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void grass_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void simple_color_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 
@@ -217,7 +217,7 @@ mat4 make_xrot_mat(float angle)
 }
 
 
-void grass_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void grass_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
 	//convenience
 	vec4* v_attribs = (vec4*)vertex_attribs;
@@ -243,13 +243,13 @@ void grass_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins,
 	//vec4 pos = v_attribs[0] + offset;
 
 
-	//with MANGLE_TYPES have to either cast gl_Position to vec4 or rhs to glinternal_vec4
+	//with PGL_MANGLE_TYPES have to either cast gl_Position to vec4 or rhs to glinternal_vec4
 	*(vec4*)&builtins->gl_Position = u->mvp_mat * pos;
 }
 
 void simple_color_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 {
-	//with MANGLE_TYPES have to either cast FragColor to vec4 or color to glinternal_vec4
+	//with PGL_MANGLE_TYPES have to either cast FragColor to vec4 or color to glinternal_vec4
 	*(vec4*)&builtins->gl_FragColor = ((My_Uniforms*)uniforms)->color;
 }
 
@@ -275,7 +275,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

@@ -52,6 +52,8 @@ examples/c_ex3
 examples/ex1
 examples/ex2
 examples/ex3
+examples/std_shader_ex1
+examples/std_shader_ex2
 examples/line_testing
 
 demos/cubemap
@@ -66,13 +68,17 @@ demos/modelviewer
 demos/multidraw
 demos/testprimitives
 demos/pointsprites
+demos/particles
 demos/raytracing_1weekend
 demos/sdl_renderer_imgui
+demos/pgl_imgui
 demos/imgui.ini
 demos/assimp_convert
 
 testing/run_tests
 testing/perf_tests
+testing/math_testing
+testing/skybox_clipping
 
 testing/test_output/*
 !testing/test_output/emptyfile

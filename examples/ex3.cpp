@@ -1,8 +1,8 @@
 #include "rsw_math.h"
 
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
-#include "GLObjects.h"
+#include "portablegl.h"
 
 
 #include <iostream>
@@ -41,14 +41,14 @@ typedef struct My_Uniforms
 void cleanup();
 void setup_context();
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 int main(int argc, char** argv)
 {
 	setup_context();
 
-	GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
+	GLenum smooth[4] = { PGL_SMOOTH4 };
 
 	float points[] = { -0.5, -0.5, 0,
 	                    0.5, -0.5, 0,
@@ -66,14 +66,15 @@ int main(int argc, char** argv)
 	trans_mat = rsw::translation_mat4(0, 0, -5);
 	vp_mat = proj_mat * trans_mat;
 
-	Buffer triangle(1);
-	triangle.bind(GL_ARRAY_BUFFER);
+	GLuint triangle, colors;
+	glGenBuffers(1, &triangle);
+	glBindBuffer(GL_ARRAY_BUFFER, triangle);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*9, points, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-	Buffer colors(1);
-	colors.bind(GL_ARRAY_BUFFER);
+	glGenBuffers(1, &colors);
+	glBindBuffer(GL_ARRAY_BUFFER, colors);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(float)*12, color_array, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(4);
 	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 0, 0);
@@ -139,9 +140,9 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	((vec4*)vs_output)[0] = ((vec4*)vertex_attribs)[4]; //color
+	((pgl_vec4*)vs_output)[0] = vertex_attribs[4]; //color
 
 	*(vec4*)&builtins->gl_Position = *((mat4*)uniforms) * ((vec4*)vertex_attribs)[0];
 }
@@ -181,7 +182,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

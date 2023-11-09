@@ -12,11 +12,9 @@ void glViewport(int x, int y, GLsizei width, GLsizei height);
 
 GLubyte* glGetString(GLenum name);
 GLenum glGetError();
-void glGetBooleanv(GLenum pname, GLboolean* params);
-void glGetDoublev(GLenum pname, GLdouble* params);
-void glGetFloatv(GLenum pname, GLfloat* params);
-void glGetIntegerv(GLenum pname, GLint* params);
-void glGetInteger64v(GLenum pname, GLint64* params);
+void glGetBooleanv(GLenum pname, GLboolean* data);
+void glGetFloatv(GLenum pname, GLfloat* data);
+void glGetIntegerv(GLenum pname, GLint* data);
 GLboolean glIsEnabled(GLenum cap);
 
 void glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
@@ -26,6 +24,8 @@ void glDepthRange(GLclampf nearVal, GLclampf farVal);
 void glDepthMask(GLboolean flag);
 void glBlendFunc(GLenum sfactor, GLenum dfactor);
 void glBlendEquation(GLenum mode);
+void glBlendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha);
+void glBlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha);
 void glBlendColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 void glClear(GLbitfield mask);
 void glProvokingVertex(GLenum provokeMode);
@@ -53,7 +53,6 @@ void glGenTextures(GLsizei n, GLuint* textures);
 void glDeleteTextures(GLsizei n, GLuint* textures);
 void glBindTexture(GLenum target, GLuint texture);
 
-void glActiveTexture(GLenum texture);
 void glTexParameteri(GLenum target, GLenum pname, GLint param);
 void glTexParameterfv(GLenum target, GLenum pname, const GLfloat* params);
 void glTextureParameteri(GLuint texture, GLenum pname, GLint param);
@@ -82,12 +81,12 @@ void glEnableVertexAttribArray(GLuint index);
 void glDisableVertexAttribArray(GLuint index);
 void glDrawArrays(GLenum mode, GLint first, GLsizei count);
 void glMultiDrawArrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei drawcount);
-void glDrawElements(GLenum mode, GLsizei count, GLenum type, GLsizei offset);
-void glMultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, GLsizei* indices, GLsizei drawcount);
+void glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices);
+void glMultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, const GLvoid* const* indices, GLsizei drawcount);
 void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
 void glDrawArraysInstancedBaseInstance(GLenum mode, GLint first, GLsizei count, GLsizei primcount, GLuint baseinstance);
-void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, GLsizei offset, GLsizei primcount);
-void glDrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type, GLsizei offset, GLsizei primcount, GLuint baseinstance);
+void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices, GLsizei primcount);
+void glDrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices, GLsizei primcount, GLuint baseinstance);
 
 //DSA functions (from OpenGL 4.5+)
 #define glCreateBuffers(n, buffers) glGenBuffers(n, buffers)

@@ -1,9 +1,9 @@
 #include "rsw_math.h"
 
 
-#define MANGLE_TYPES
+#define PGL_MANGLE_TYPES
 #define PORTABLEGL_IMPLEMENTATION
-#include "GLObjects.h"
+#include "portablegl.h"
 
 
 #include <iostream>
@@ -33,22 +33,17 @@ u32* bbufpix;
 
 glContext the_Context;
 
-typedef struct My_Uniforms
-{
-	mat4 mvp_mat;
-} My_Uniforms;
-
 void cleanup();
 void setup_context();
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
 int main(int argc, char** argv)
 {
 	setup_context();
 
-	GLenum smooth[4] = { SMOOTH, SMOOTH, SMOOTH, SMOOTH };
+	GLenum smooth[4] = { PGL_SMOOTH4 };
 
 	float points[] = { -0.5, -0.5, 0,
 	                    0.5, -0.5, 0,
@@ -59,36 +54,26 @@ int main(int argc, char** argv)
 	                        0.0, 1.0, 0.0, 1.0,
 	                        0.0, 0.0, 1.0, 1.0 };
 
-	mat4 identity;
-	My_Uniforms the_uniforms;
-
-
-	Buffer triangle(1);
-	triangle.bind(GL_ARRAY_BUFFER);
+	GLuint triangle, colors;
+	glGenBuffers(1, &triangle);
+	glBindBuffer(GL_ARRAY_BUFFER, triangle);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*9, points, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-	Buffer colors(1);
-	colors.bind(GL_ARRAY_BUFFER);
+	glGenBuffers(1, &colors);
+	glBindBuffer(GL_ARRAY_BUFFER, colors);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(float)*12, color_array, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(4);
 	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 0, 0);
 
-
 	//There's no reason to use a vec4 and vary the alpha in this case.  It'll just make
 	//it marginally slower.  I can't think of very many cases where'd you want that effect.
 	//TODO look into SDL's behavior/options
-	//Note, I can't use SDL2 for my blending because my library has to be self contained
+	//Note, I can't use SDL2 for my blending because my library has to be self-contained
 	//and fulfill the specs on its own but I should know what SDL2 can do anyway
 	GLuint myshader = pglCreateProgram(smooth_vs, smooth_fs, 4, smooth, GL_FALSE);
 	glUseProgram(myshader);
-
-	pglSetUniform(&the_uniforms);
-
-	the_uniforms.mvp_mat = identity;
-
-
 
 	SDL_Event e;
 	bool quit = false;
@@ -116,7 +101,6 @@ int main(int argc, char** argv)
 			counter = 0;
 		}
 
-		
 		glClearColor(0, 0, 0, 1);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -133,11 +117,11 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void smooth_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void smooth_vs(float* vs_output, pgl_vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	((vec4*)vs_output)[0] = ((vec4*)vertex_attribs)[4]; //color
+	((pgl_vec4*)vs_output)[0] = vertex_attribs[4]; //color
 
-	*(vec4*)&builtins->gl_Position = *((mat4*)uniforms) * ((vec4*)vertex_attribs)[0];
+	builtins->gl_Position = vertex_attribs[0];
 }
 
 void smooth_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
@@ -168,7 +152,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

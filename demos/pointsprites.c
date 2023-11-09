@@ -40,7 +40,7 @@ void setup_context();
 void setup_gl_data();
 
 
-void passthrough_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
+void passthrough_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms);
 void point_sprites_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 void tex_point_sprites_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms);
 
@@ -79,7 +79,8 @@ int main(int argc, char** argv)
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-
+	// technically the last parameter of both of these should be GL_TRUE since the fragment
+	// shaders both use discard but since there's nothing overlapping it doesn't actually affect anything
 	GLuint simple_prog = pglCreateProgram(passthrough_vs, point_sprites_fs, 0, NULL, GL_FALSE);
 	glUseProgram(simple_prog);
 	pglSetUniform(&the_uniforms);
@@ -142,9 +143,9 @@ int main(int argc, char** argv)
 }
 
 
-void passthrough_vs(float* vs_output, void* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
+void passthrough_vs(float* vs_output, vec4* vertex_attribs, Shader_Builtins* builtins, void* uniforms)
 {
-	builtins->gl_Position = ((vec4*)vertex_attribs)[0];
+	builtins->gl_Position = vertex_attribs[0];
 }
 
 
@@ -222,7 +223,6 @@ void setup_context()
 		puts("Failed to initialize glContext");
 		exit(0);
 	}
-	set_glContext(&the_Context);
 }
 
 void cleanup()

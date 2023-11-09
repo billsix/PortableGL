@@ -3,8 +3,12 @@ typedef struct glContext
 {
 	mat4 vp_mat;
 
-	int x_min, y_min;
-	size_t x_max, y_max;
+	// viewport control TODO not currently used internally
+	GLint xmin, ymin;
+	GLsizei width, height;
+
+	// Always on scissoring (ie screenspace/guardband clipping)
+	GLint lx, ly, ux, uy;
 
 	cvector_glVertex_Array vertex_arrays;
 	cvector_glBuffer buffers;
@@ -19,8 +23,9 @@ typedef struct glContext
 
 	GLenum error;
 
-	void* uniform;
-
+	// TODO make some or all of these locals, measure performance
+	// impact. Would be necessary in the long term if I ever
+	// parallelize more
 	vec4 vertex_attribs_vs[GL_MAX_VERTEX_ATTRIBS];
 	Shader_Builtins builtins;
 	Vertex_Shader_output vs_output;
@@ -34,7 +39,9 @@ typedef struct glContext
 	GLboolean depth_mask;
 	GLboolean blend;
 	GLboolean logic_ops;
-	GLboolean poly_offset;
+	GLboolean poly_offset_pt;
+	GLboolean poly_offset_line;
+	GLboolean poly_offset_fill;
 	GLboolean scissor_test;
 
 	// stencil test requires a lot of state, especially for
@@ -56,9 +63,12 @@ typedef struct glContext
 	GLenum stencil_dppass_back;
 
 	GLenum logic_func;
-	GLenum blend_sfactor;
-	GLenum blend_dfactor;
-	GLenum blend_equation;
+	GLenum blend_sRGB;
+	GLenum blend_sA;
+	GLenum blend_dRGB;
+	GLenum blend_dA;
+	GLenum blend_eqRGB;
+	GLenum blend_eqA;
 	GLenum cull_mode;
 	GLenum front_face;
 	GLenum poly_mode_front;
@@ -73,8 +83,8 @@ typedef struct glContext
 
 	GLint scissor_lx;
 	GLint scissor_ly;
-	GLsizei scissor_ux;
-	GLsizei scissor_uy;
+	GLsizei scissor_w;
+	GLsizei scissor_h;
 
 	GLint unpack_alignment;
 	GLint pack_alignment;
