@@ -1,0 +1,2 @@
+cd /portablegl/
+exec bash
